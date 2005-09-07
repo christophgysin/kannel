@@ -1,0 +1,1007 @@
+#! /bin/sh /usr/share/dpatch/dpatch-run
+## 64_mbuni.dpatch by Loic Minier <lool@dooz.org>
+##
+## All lines beginning with `## DP:' are a description of the patch.
+## DP: Required fixes for Mbuni 1.0.0
+
+@DPATCH@
+diff -urNad --exclude=CVS --exclude=.svn ./gw/ota_compiler.c /tmp/dpep-work.9UOdUW/kannel-1.4.0/gw/ota_compiler.c
+--- ./gw/ota_compiler.c	2004-01-22 15:08:24.000000000 +0100
++++ /tmp/dpep-work.9UOdUW/kannel-1.4.0/gw/ota_compiler.c	2005-08-25 18:28:50.000000000 +0200
+@@ -91,9 +91,10 @@
+  * chapter 8.2.
+  */
+ struct ota_3table_t {
+-    char *name;
+-    char *value;
+-    unsigned char token;
++     char *name;
++     char *value;
++     unsigned char token;
++     unsigned char code_page; 
+ };
+ 
+ typedef struct ota_3table_t ota_3table_t;
+@@ -103,9 +104,10 @@
+  */
+ 
+ static ota_2table_t ota_elements[] = {
+-    { "CHARACTERISTIC-LIST", 0x05 },
+-    { "CHARACTERISTIC", 0x06 },
+-    { "PARM", 0x07 }
++     { "wap-provisioningdoc", 0x05},
++     { "CHARACTERISTIC-LIST", 0x05 },
++     { "CHARACTERISTIC", 0x06 },
++     { "PARM", 0x07 }
+ };
+ 
+ #define NUMBER_OF_ELEMENTS sizeof(ota_elements)/sizeof(ota_elements[0])
+@@ -178,6 +180,174 @@
+ 
+ #define NUMBER_OF_ATTRIBUTES sizeof(ota_attributes)/sizeof(ota_attributes[0])
+ 
++static ota_3table_t oma_ota_attributes[] = {
++     {"version", "1.0", 0x46},
++     {"version", "INLINE", 0x45},
++     {"type", "PXLOGICAL", 0x51},
++     {"type", "PXPHYSICAL", 0x52},
++     {"type", "PORT", 0x53},
++     {"type", "VALIDITY", 0x54},
++     {"type", "NAPDEF", 0x55},
++     {"type", "BOOTSTRAP", 0x56},
++     {"type", "VENDORCONFIG", 0x57},
++     {"type", "PXAUTHINFO", 0x59},
++     {"type", "NAPAUTHINFO", 0x5A},
++     {"type", "ACCESS", 0x5B},
++     {"type", "CLIENTIDENTITY", 0x58},
++     {"type", "APPLICATION", 0x55,1},
++     {"type", "APPADDR", 0x56,1},
++     {"type", "APPAUTH", 0x57,1},
++     {"type", "RESOURCE", 0x59,1},
++     {"type", "INLINE", 0x50},
++     {"name", "NAME", 0x7},
++     {"name", "NAP-ADDRESS", 0x8},
++     {"name", "NAP-ADDRTYPE", 0x9},
++     {"name", "CALLTYPE", 0xA},
++     {"name", "VALIDUNTIL", 0xB},
++     {"name", "AUTHTYPE", 0xC},
++     {"name", "AUTHNAME", 0xD},
++     {"name", "AUTHSECRET", 0xE},
++     {"name", "LINGER", 0xF},
++     {"name", "BEARER", 0x10},
++     {"name", "NAPID", 0x11},
++     {"name", "COUNTRY", 0x12},
++     {"name", "NETWORK", 0x13},
++     {"name", "INTERNET", 0x14},
++     {"name", "PROXY-ID", 0x15},
++     {"name", "PROXY-PROVIDER-ID", 0x16},
++     {"name", "DOMAIN", 0x17},
++     {"name", "PROVURL", 0x18},
++     {"name", "PXAUTH-TYPE", 0x19},
++     {"name", "PXAUTH-ID", 0x1A},
++     {"name", "PXAUTH-PW", 0x1B},
++     {"name", "STARTPAGE", 0x1C},
++     {"name", "BASAUTH-ID", 0x1D},
++     {"name", "BASAUTH-PW", 0x1E},
++     {"name", "PUSHENABLED", 0x1F},
++     {"name", "PXADDR", 0x20},
++     {"name", "PXADDRTYPE", 0x21},
++     {"name", "PORTNBR", 0x23},
++     {"name", "SERVICE", 0x24},
++     {"name", "LINKSPEED", 0x25},
++     {"name", "DNLINKSPEED", 0x26},
++     {"name", "LOCAL-ADDR", 0x27},
++     {"name", "LOCAL-ADDRTYPE", 0x28},
++     {"name", "CONTEXT-ALLOW", 0x29},
++     {"name", "TRUST", 0x2A},
++     {"name", "MASTER", 0x2B},
++     {"name", "SID", 0x2C},
++     {"name", "SOC", 0x2D},
++     {"name", "WSP-VERSION", 0x2E},
++     {"name", "PHYSICAL-PROXY-ID", 0x2F},
++     {"name", "CLIENT-ID", 0x30},
++     {"name", "DELIVERY-ERR-SDU", 0x31},
++     {"name", "DELIVERY-ORDER", 0x32},
++     {"name", "TRAFFIC-CLASS", 0x33},
++     {"name", "MAX-SDU-SIZE", 0x34},
++     {"name", "MAX-BITRATE-UPLINK", 0x35},
++     {"name", "MAX-BITRATE-DNLINK", 0x36},
++     {"name", "RESIDUAL-BER", 0x37},
++     {"name", "SDU-ERROR-RATIO", 0x38},
++     {"name", "TRAFFIC-HANDL-PRIO", 0x39},
++     {"name", "TRANSFER-DELAY", 0x3A},
++     {"name", "GUARANTEED-BITRATE-UPLINK", 0x3B},
++     {"name", "GUARANTEED-BITRATE-DNLINK", 0x3C},
++     {"name", "PXADDR-FQDN", 0x3D},
++     {"name", "PROXY-PW", 0x3E},
++     {"name", "PPGAUTH-TYPE", 0x3F},
++     {"name", "PULLENABLED", 0x47},
++     {"name", "DNS-ADDR", 0x48},
++     {"name", "MAX-NUM-RETRY", 0x49},
++     {"name", "FIRST-RETRY-TIMEOUT", 0x4A},
++     {"name", "REREG-THRESHOLD", 0x4B},
++     {"name", "T-BIT", 0x4C},
++     {"name", "AUTH-ENTITY", 0x4E},
++     {"name", "SPI", 0x4F},
++     {"name", "TO-NAPID", 0x22},
++     {"name", "AACCEPT", 0x2E,1},
++     {"name", "AAUTHDATA", 0x2F,1},
++     {"name", "AAUTHLEVEL", 0x30,1},
++     {"name", "AAUTHNAME", 0x31,1},
++     {"name", "AAUTHSECRET", 0x32,1},
++     {"name", "AAUTHTYPE", 0x33,1},
++     {"name", "ADDR", 0x34,1},
++     {"name", "ADDRTYPE", 0x35,1},
++     {"name", "APPID", 0x36,1},
++     {"name", "APROTOCOL", 0x37,1},
++     {"name", "PROVIDER-ID", 0x38,1},
++     {"name", "TO-PROXY", 0x39,1},
++     {"name", "URI", 0x3A,1},
++     {"name", "RULE", 0x3B,1},
++     {"name", "INLINE", 0x5},
++     {"value", "IPV4", 0x85},
++     {"value", "IPV6", 0x86},
++     {"value", "E164", 0x87},
++     {"value", "ALPHA", 0x88},
++     {"value", "APN", 0x89},
++     {"value", "SCODE", 0x8A},
++     {"value", "TETRA-ITSI", 0x8B},
++     {"value", "APPSRV", 0x8D,1},
++     {"value", "OBEX", 0x8E,1},
++     {"value", "MAN", 0x8C},
++     {"value", "ANALOG-MODEM", 0x90},
++     {"value", "V.120", 0x91},
++     {"value", "V.110", 0x92},
++     {"value", "X.31", 0x93},
++     {"value", "BIT-TRANSPARENT", 0x94},
++     {"value", "DIRECT-ASYNCHRONOUS-DATA-SERVICE", 0x95},
++     {"value", "PAP", 0x9A},
++     {"value", "CHAP", 0x9B},
++     {"value", "HTTP-BASIC", 0x9C},
++     {"value", "HTTP-DIGEST", 0x9D},
++     {"value", "WTLS-SS", 0x9E},
++     {"value", "MD5", 0x9F},
++     {"value", "GSM-USSD", 0xA2},
++     {"value", "GSM-SMS", 0xA3},
++     {"value", "ANSI-136-GUTS", 0xA4},
++     {"value", "IS-95-CDMA-SMS", 0xA5},
++     {"value", "IS-95-CDMA-CSD", 0xA6},
++     {"value", "IS-95-CDMA-PACKET", 0xA7},
++     {"value", "ANSI-136-CSD", 0xA8},
++     {"value", "ANSI-136-GPRS", 0xA9},
++     {"value", "GSM-CSD", 0xAA},
++     {"value", "GSM-GPRS", 0xAB},
++     {"value", "AMPS-CDPD", 0xAC},
++     {"value", "PDC-CSD", 0xAD},
++     {"value", "PDC-PACKET", 0xAE},
++     {"value", "IDEN-SMS", 0xAF},
++     {"value", "IDEN-CSD", 0xB0},
++     {"value", "IDEN-PACKET", 0xB1},
++     {"value", "FLEX/REFLEX", 0xB2},
++     {"value", "PHS-SMS", 0xB3},
++     {"value", "PHS-CSD", 0xB4},
++     {"value", "TETRA-SDS", 0xB5},
++     {"value", "TETRA-PACKET", 0xB6},
++     {"value", "ANSI-136-GHOST", 0xB7},
++     {"value", "MOBITEX-MPAK", 0xB8},
++     {"value", "CDMA2000-1X-SIMPLE-IP", 0xB9},
++     {"value", "CDMA2000-1X-MOBILE-IP", 0xBA},
++     {"value", "AUTOBAUDING", 0xC5},
++     {"value", "CL-WSP", 0xCA},
++     {"value", "CO-WSP", 0xCB},
++     {"value", "CL-SEC-WSP", 0xCC},
++     {"value", "CO-SEC-WSP", 0xCD},
++     {"value", "CL-SEC-WTA", 0xCE},
++     {"value", "CO-SEC-WTA", 0xCF},
++     {"value", "OTA-HTTP-TO", 0xD0},
++     {"value", "OTA-HTTP-TLS-TO", 0xD1},
++     {"value", "OTA-HTTP-PO", 0xD2},
++     {"value", "OTA-HTTP-TLS-PO", 0xD3},
++     {"value", ",", 0x80,1},
++     {"value", "HTTP-", 0x81,1},
++     {"value", "BASIC", 0x82},
++     {"value", "DIGEST", 0x83},
++     {"value", "AAA", 0xE0},
++     {"value", "HA", 0xE1},
++     {"value", "INLINE", 0x6}     
++};
++
++#define OMA_VALUE_TAG 0x06
++#define NUMBER_OF_OMA_ATTRIBUTES sizeof(oma_ota_attributes)/sizeof(oma_ota_attributes[0])
+ #include "xml_definitions.h"
+ 
+ /****************************************************************************
+@@ -187,9 +357,9 @@
+ 
+ static int parse_document(xmlDocPtr document, Octstr *charset, 
+ 			  simple_binary_t **ota_binary);
+-static int parse_node(xmlNodePtr node, simple_binary_t **otabxml);    
+-static int parse_element(xmlNodePtr node, simple_binary_t **otabxml);
+-static int parse_attribute(xmlAttrPtr attr, simple_binary_t **otabxml); 
++static int parse_node(xmlNodePtr node, simple_binary_t **otabxml, int is_oma);    
++static int parse_element(xmlNodePtr node, simple_binary_t **otabxml, int is_oma);
++static int parse_attribute(xmlAttrPtr attr, simple_binary_t **otabxml, int is_oma); 
+ static int use_inline_string(Octstr *valueos);      
+ 
+ /***************************************************************************
+@@ -246,16 +416,26 @@
+                           simple_binary_t **otabxml)
+ {
+     xmlNodePtr node;
+-
+-    (*otabxml)->wbxml_version = 0x01; /* WBXML Version number 1.1  */
+-    (*otabxml)->public_id = 0x01; /* Public id for an unknown document type */
++    int is_oma;
+     
++    if (document->intSubset && 
++	document->intSubset->ExternalID &&
++	strcmp(document->intSubset->ExternalID, "-//WAPFORUM//DTD PROV 1.0//EN") == 0) {
++	 is_oma = 1;
++	 (*otabxml)->wbxml_version = 0x03; /* WBXML Version number 1.3  */
++	 (*otabxml)->public_id = 0x0B; /* Public id for this kind of doc */	 
++    } else {
++	 (*otabxml)->wbxml_version = 0x01; /* WBXML Version number 1.1  */
++	 (*otabxml)->public_id = 0x01; /* Public id for an unknown document type */
++	 is_oma = 0;
++    }
++    (*otabxml)->code_page = 0;
+     charset = octstr_create("UTF-8");
+     (*otabxml)->charset = parse_charset(charset);
+     octstr_destroy(charset);
+ 
+     node = xmlDocGetRootElement(document);
+-    return parse_node(node, otabxml);
++    return parse_node(node, otabxml, is_oma);
+ }
+ 
+ /*
+@@ -265,14 +445,14 @@
+  * after that calls itself for the next child on the list.
+  */
+ 
+-static int parse_node(xmlNodePtr node, simple_binary_t **otabxml)
++static int parse_node(xmlNodePtr node, simple_binary_t **otabxml, int is_oma)
+ {
+     int status = 0;
+     
+     /* Call for the parser function of the node type. */
+     switch (node->type) {
+     case XML_ELEMENT_NODE:
+-	status = parse_element(node, otabxml);
++	status = parse_element(node, otabxml,is_oma);
+ 	break;
+     case XML_TEXT_NODE:
+     case XML_COMMENT_NODE:
+@@ -297,12 +477,12 @@
+     case 0:
+ 
+ 	if (node->children != NULL)
+-	    if (parse_node(node->children, otabxml) == -1)
++	    if (parse_node(node->children, otabxml,is_oma) == -1)
+ 		return -1;
+ 	break;
+     case 1:
+ 	if (node->children != NULL)
+-	    if (parse_node(node->children, otabxml) == -1)
++	    if (parse_node(node->children, otabxml,is_oma) == -1)
+ 		return -1;
+ 	parse_end(otabxml);
+ 	break;
+@@ -316,7 +496,7 @@
+     }
+ 
+     if (node->next != NULL)
+-	if (parse_node(node->next, otabxml) == -1)
++	if (parse_node(node->next, otabxml,is_oma) == -1)
+ 	    return -1;
+ 
+     return 0;
+@@ -330,7 +510,7 @@
+  *               0, do not add an end tag (it has children)
+  *              -1, an error occurred
+  */
+-static int parse_element(xmlNodePtr node, simple_binary_t **otabxml)
++static int parse_element(xmlNodePtr node, simple_binary_t **otabxml, int is_oma)
+ {
+     Octstr *name;
+     size_t i;
+@@ -347,7 +527,7 @@
+ 
+     i = 0;
+     while (i < NUMBER_OF_ELEMENTS) {
+-        if (octstr_compare(name, octstr_imm(ota_elements[i].name)) == 0)
++        if (octstr_case_compare(name, octstr_imm(ota_elements[i].name)) == 0)
+             break;
+         ++i;
+     }
+@@ -382,7 +562,7 @@
+     if (node->properties != NULL) {
+ 	attribute = node->properties;
+ 	while (attribute != NULL) {
+-	    parse_attribute(attribute, otabxml);
++	    parse_attribute(attribute, otabxml,is_oma);
+ 	    attribute = attribute->next;
+ 	}
+ 	parse_end(otabxml);
+@@ -398,15 +578,16 @@
+  * chapters 8.1 and 8.2. 
+  * Returns 0 when success, -1 when error.
+  */
+-static int parse_attribute(xmlAttrPtr attr, simple_binary_t **otabxml)
++static int parse_attribute(xmlAttrPtr attr, simple_binary_t **otabxml, int is_oma)
+ {
+     Octstr *name,
+            *value,
+            *valueos,
+            *nameos;
+     unsigned char ota_hex;
+-    size_t i;
+-
++    size_t i, lim;
++    ota_3table_t *alist;
++    
+     name = octstr_create(attr->name);
+ 
+     if (attr->children != NULL)
+@@ -417,16 +598,24 @@
+     if (value == NULL)
+         goto error;
+ 
++    if (is_oma) { /* Pick right one. */
++	 alist = oma_ota_attributes;
++	 lim = NUMBER_OF_OMA_ATTRIBUTES;
++    } else {
++	 alist = ota_attributes;
++	 lim = NUMBER_OF_ATTRIBUTES;
++    }
++
+     i = 0;
+     valueos = NULL;
+     nameos = NULL;
+-    while (i < NUMBER_OF_ATTRIBUTES) {
+-	nameos = octstr_imm(ota_attributes[i].name);
+-        if (octstr_compare(name, nameos) == 0) {
+-	    if (ota_attributes[i].value != NULL) {
+-                valueos = octstr_imm(ota_attributes[i].value);
++    while (i < lim) {
++	nameos = octstr_imm(alist[i].name);
++        if (octstr_case_compare(name, nameos) == 0) {
++	    if (alist[i].value != NULL) {
++                valueos = octstr_imm(alist[i].value);
+             }
+-            if (octstr_compare(value, valueos) == 0) {
++            if (octstr_case_compare(value, valueos) == 0) {
+ 	        break;
+             }
+             if (octstr_compare(valueos, octstr_imm("INLINE")) == 0) {
+@@ -436,15 +625,22 @@
+        ++i;
+     }
+ 
+-    if (i == NUMBER_OF_ATTRIBUTES) {
++    if (i == lim) {
+         warning(0, "unknown attribute %s in OTA source", 
+                 octstr_get_cstr(name));
+         warning(0, "its value being %s", octstr_get_cstr(value));
+         goto error;
+     }
+ 
+-    ota_hex = ota_attributes[i].token;
++    ota_hex = alist[i].token;
+     if (!use_inline_string(valueos)) {
++	 if (alist[i].code_page != (*otabxml)->code_page) { /* Switch code page. */
++	      output_char(0, otabxml);
++	      output_char(alist[i].code_page, otabxml);
++	      (*otabxml)->code_page = alist[i].code_page;
++	 }
++	 if (is_oma && name && octstr_case_compare(name, octstr_imm("value")) == 0)
++	      output_char(OMA_VALUE_TAG, otabxml);
+         output_char(ota_hex, otabxml);
+     } else {
+         output_char(ota_hex, otabxml);
+diff -urNad --exclude=CVS --exclude=.svn ./gw/ota_prov.c /tmp/dpep-work.9UOdUW/kannel-1.4.0/gw/ota_prov.c
+--- ./gw/ota_prov.c	2004-01-22 15:08:24.000000000 +0100
++++ /tmp/dpep-work.9UOdUW/kannel-1.4.0/gw/ota_prov.c	2005-08-25 18:28:50.000000000 +0200
+@@ -70,12 +70,16 @@
+ 
+ #include "gwlib/gwlib.h"
+ 
++#ifdef HAVE_LIBSSL
++#include <openssl/hmac.h>
++#endif
++
+ #include "msg.h"
+ #include "sms.h"
+ #include "ota_prov.h"
+ #include "ota_prov_attr.h"
+ #include "ota_compiler.h"
+-
++#include "wap/wsp_headers.h"
+ 
+ /***************************************************************************
+  *
+@@ -87,17 +91,20 @@
+  * UDH here - SAR UDH is added when (or if) we split the message. This is our
+  * *specific* WDP layer.
+  */
+-static void ota_pack_udh(Msg **msg)
++static void ota_pack_udh(Msg **msg, Octstr *doc_type)
+ {
+     (*msg)->sms.udhdata = octstr_create("");
+-    octstr_append_from_hex((*msg)->sms.udhdata, "060504C34FC002");
++    if (octstr_case_compare(doc_type, octstr_imm("oma-settings")) == 0) 
++      octstr_append_from_hex((*msg)->sms.udhdata, "0605040B840B84");    
++    else 
++      octstr_append_from_hex((*msg)->sms.udhdata, "060504C34FC002");    
+ }
+ 
+ 
+ /*
+  * Our WSP headers: Push Id, PDU type, headers, charset.
+  */
+-static int ota_pack_push_headers(Msg **msg, Octstr *mime_type)
++static int ota_pack_push_headers(Msg **msg, Octstr *mime_type, Octstr *sec, Octstr *pin, Octstr *ota_binary)
+ {    
+     (*msg)->sms.msgdata = octstr_create("");
+     if (octstr_case_compare(mime_type, octstr_imm("settings")) == 0) {
+@@ -107,6 +114,10 @@
+         octstr_format_append((*msg)->sms.msgdata, "%s", 
+                              "application/x-wap-prov.browser-settings");
+         octstr_append_from_hex((*msg)->sms.msgdata, "00");
++
++	/* charset UTF-8 */
++	octstr_append_from_hex((*msg)->sms.msgdata, "81EA");
++    
+     } else if (octstr_case_compare(mime_type, octstr_imm("bookmarks")) == 0) {
+         /* PUSH ID, PDU type, header length, value length */
+         octstr_append_from_hex((*msg)->sms.msgdata, "01062D1F2B");
+@@ -114,13 +125,61 @@
+         octstr_format_append((*msg)->sms.msgdata, "%s", 
+                              "application/x-wap-prov.browser-bookmarks");
+         octstr_append_from_hex((*msg)->sms.msgdata, "00");
++	/* charset UTF-8 */
++	octstr_append_from_hex((*msg)->sms.msgdata, "81EA");
++
++    } else if (octstr_case_compare(mime_type, octstr_imm("oma-settings")) == 0) {
++	 Octstr *hdr = octstr_create(""), *mac; 
++	 unsigned char *p;
++	 int mac_len;
++#ifdef HAVE_LIBSSL
++	 unsigned char macbuf[EVP_MAX_MD_SIZE];
++#endif
++	 /* PUSH ID, PDU type, header length, value length */
++	 octstr_append_from_hex((*msg)->sms.msgdata, "0106");
++	 
++	 octstr_append_from_hex(hdr, "1f2db6"); /* Content type + other type + sec param */
++	 wsp_pack_short_integer(hdr, 0x11);
++	 if (octstr_case_compare(sec, octstr_imm("netwpin")) == 0)
++	      wsp_pack_short_integer(hdr, 0x0);	      
++	 else if (octstr_case_compare(sec, octstr_imm("userpin")) == 0)
++	      wsp_pack_short_integer(hdr, 0x01);	      
++	 else if (octstr_case_compare(sec, octstr_imm("usernetwpin")) == 0)
++	      wsp_pack_short_integer(hdr, 0x02);	      
++	 else if (octstr_case_compare(sec, octstr_imm("userpinmac")) == 0)
++	      wsp_pack_short_integer(hdr, 0x03); /* XXXX Although not quite supported now.*/	      
++	 else {
++	      warning(0, "Unknown SEC pin type '%s'.", octstr_get_cstr(sec));
++	      wsp_pack_short_integer(hdr, 0x01);	      
++	 }
++	 wsp_pack_short_integer(hdr, 0x12); /* MAC */
++
++#ifdef HAVE_LIBSSL
++	 p = HMAC(EVP_sha1(), octstr_get_cstr(pin), octstr_len(pin), 
++	      octstr_get_cstr(ota_binary), octstr_len(ota_binary), 
++	      macbuf, &mac_len);
++#else
++	 mac_len = 0;
++	 p = "";
++	 warning(0, "No SSL Support, '%s' not supported!", octstr_get_cstr(mime_type));
++#endif
++	 mac = octstr_create_from_data(p, mac_len);
++	 octstr_binary_to_hex(mac,1);
++	 
++	 octstr_append(hdr,mac);
++	 octstr_append_from_hex(hdr, "00");
++	 
++	 octstr_append_uintvar((*msg)->sms.msgdata, octstr_len(hdr));
++	 octstr_append((*msg)->sms.msgdata, hdr);
++	 
++	 octstr_destroy(hdr);
++	 octstr_destroy(mac);
++	 
+     } else {
+         warning(0, "Unknown MIME type in OTA request, type '%s' is unsupported.", 
+                 octstr_get_cstr(mime_type));
+         return 0;
+     }
+-    /* charset UTF-8 */
+-    octstr_append_from_hex((*msg)->sms.msgdata, "81EA");
+ 
+     return 1;
+ }
+@@ -132,17 +191,19 @@
+  */
+ 
+ int ota_pack_message(Msg **msg, Octstr *ota_doc, Octstr *doc_type, 
+-                     Octstr *from, Octstr *phone_number)
++                     Octstr *from, Octstr *phone_number, Octstr *sec, Octstr *pin)
+ {
+     Octstr *ota_binary;
+ 
+     *msg = msg_create(sms);
+     (*msg)->sms.sms_type = mt_push;
+-    ota_pack_udh(msg);
+-    if (!ota_pack_push_headers(msg, doc_type))
+-        goto herror;
++    ota_pack_udh(msg,doc_type);
++
+     if (ota_compile(ota_doc, octstr_imm("UTF-8"), &ota_binary) == -1)
+         goto cerror;
++
++    if (!ota_pack_push_headers(msg, doc_type, sec, pin, ota_binary))
++        goto herror;
+     octstr_format_append((*msg)->sms.msgdata, "%S", ota_binary);
+     (*msg)->sms.sender = octstr_duplicate(from);
+     (*msg)->sms.receiver = octstr_duplicate(phone_number);
+@@ -156,18 +217,25 @@
+     octstr_destroy(ota_doc);
+     octstr_destroy(doc_type);
+     octstr_destroy(from);
++    octstr_destroy(sec);
++    octstr_destroy(pin);
+     return 0;
+ 
+ herror:
++    octstr_destroy(ota_binary);
+     octstr_destroy(ota_doc);
+     octstr_destroy(doc_type);
+     octstr_destroy(from);
++    octstr_destroy(sec);
++    octstr_destroy(pin);
+     return -2;
+ 
+ cerror:
+     octstr_destroy(ota_doc);
+     octstr_destroy(doc_type);
+     octstr_destroy(from);
++    octstr_destroy(sec);
++    octstr_destroy(pin);
+     return -1;
+ }
+ 
+diff -urNad --exclude=CVS --exclude=.svn ./gw/ota_prov.h /tmp/dpep-work.9UOdUW/kannel-1.4.0/gw/ota_prov.h
+--- ./gw/ota_prov.h	2004-01-22 15:08:24.000000000 +0100
++++ /tmp/dpep-work.9UOdUW/kannel-1.4.0/gw/ota_prov.h	2005-08-25 18:28:50.000000000 +0200
+@@ -77,7 +77,7 @@
+  * Return -2 when header error, -1 when compile error, 0 when no error
+  */
+ int ota_pack_message(Msg **msg, Octstr *ota_doc, Octstr *doc_type, 
+-                     Octstr *from, Octstr *phone_number);
++                     Octstr *from, Octstr *phone_number, Octstr *sec, Octstr *pin);
+ 
+ /*
+  * Tokenizes a given 'ota-setting' group (without using the xml compiler) to
+diff -urNad --exclude=CVS --exclude=.svn ./gw/smsbox.c /tmp/dpep-work.9UOdUW/kannel-1.4.0/gw/smsbox.c
+--- ./gw/smsbox.c	2004-09-03 14:42:33.000000000 +0200
++++ /tmp/dpep-work.9UOdUW/kannel-1.4.0/gw/smsbox.c	2005-08-25 18:28:50.000000000 +0200
+@@ -1210,6 +1210,7 @@
+ 	break;
+ 
+     case TRANSTYPE_EXECUTE:
++	octstr_url_decode(pattern);
+         debug("sms.exec", 0, "executing sms-service '%s'",
+               octstr_get_cstr(pattern));
+         if ((f = popen(octstr_get_cstr(pattern), "r")) != NULL) {
+@@ -2739,7 +2740,7 @@
+         
+     /* check does we have an external XML source for configuration */
+     if ((ota_doc = http_cgi_variable(list, "text")) != NULL) {
+-        
++	 Octstr *sec, *pin;
+         /*
+          * We are doing the XML OTA compiler mode for this request
+          */
+@@ -2750,9 +2751,18 @@
+         } else {
+ 	    doc_type = octstr_duplicate(doc_type);
+         }
+-
++	if ((sec = http_cgi_variable(list, "sec")) == NULL)
++	     sec = octstr_create("USERPIN");
++	else 
++	     sec = octstr_duplicate(sec);
++	
++	if ((pin = http_cgi_variable(list, "pin")) == NULL)
++	     pin = octstr_create("12345");
++	else
++	     pin = octstr_duplicate(pin);
++	
+         if ((ret = ota_pack_message(&msg, ota_doc, doc_type, from, 
+-                                phonenumber)) < 0) {
++                                phonenumber, sec, pin)) < 0) {
+             *status = HTTP_BAD_REQUEST;
+             msg_destroy(msg);
+             if (ret == -2)
+@@ -2870,7 +2880,7 @@
+ {
+     Octstr *name, *val, *ret;
+     Octstr *from, *to, *id, *user, *pass, *smsc;
+-    Octstr *type, *charset, *doc_type, *ota_doc;
++    Octstr *type, *charset, *doc_type, *ota_doc, *sec = NULL, *pin = NULL;
+     URLTranslation *t;
+     Msg *msg;
+     long l;
+@@ -2909,6 +2919,14 @@
+ 		smsc = octstr_duplicate(val);
+ 		octstr_strip_blanks(smsc);
+ 	}
++	else if (octstr_case_compare(name, octstr_imm("X-Kannel-SEC")) == 0) {
++		sec = octstr_duplicate(val);
++		octstr_strip_blanks(sec);
++	}
++	else if (octstr_case_compare(name, octstr_imm("X-Kannel-PIN")) == 0) {
++		pin = octstr_duplicate(val);
++		octstr_strip_blanks(pin);
++	}
+     }
+ 
+     /* check the username and password */
+@@ -2946,11 +2964,15 @@
+         octstr_imm("application/x-wap-prov.browser-settings")) == 0) {
+         doc_type = octstr_format("%s", "settings");
+     } 
+-    else if (octstr_case_compare(type, 
+-             octstr_imm("application/x-wap-prov.browser-bookmarks")) == 0) {
+-	    doc_type = octstr_format("%s", "bookmarks");
+-    }
+-
++	else if (octstr_case_compare(type, 
++				     octstr_imm("application/x-wap-prov.browser-bookmarks")) == 0) {
++	  doc_type = octstr_format("%s", "bookmarks");
++	}
++	else if (octstr_case_compare(type, 
++				     octstr_imm("text/vnd.wap.connectivity-xml")) == 0) {
++	  doc_type = octstr_format("%s", "oma-settings");
++	}
++	 
+     if (doc_type == NULL) {
+ 	    error(0, "%s got weird content type %s", octstr_get_cstr(sendota_url),
+               octstr_get_cstr(type));
+@@ -2964,7 +2986,9 @@
+          */
+         ota_doc = octstr_duplicate(body);
+ 
+-        if ((r = ota_pack_message(&msg, ota_doc, doc_type, from, to)) < 0) {
++        if ((r = ota_pack_message(&msg, ota_doc, doc_type, from, to,	
++				  sec ? sec : octstr_imm("USERPIN"), 
++				  pin ? pin : octstr_imm("1234"))) < 0) {
+             *status = HTTP_BAD_REQUEST;
+             msg_destroy(msg);
+             if (r == -2) {
+diff -urNad --exclude=CVS --exclude=.svn ./gw/xml_shared.h /tmp/dpep-work.9UOdUW/kannel-1.4.0/gw/xml_shared.h
+--- ./gw/xml_shared.h	2004-01-22 15:08:24.000000000 +0100
++++ /tmp/dpep-work.9UOdUW/kannel-1.4.0/gw/xml_shared.h	2005-08-25 18:28:50.000000000 +0200
+@@ -82,10 +82,11 @@
+  * XML binary type not containing a string table. This is used for SI and SL.
+  */
+ struct simple_binary_t {
+-    unsigned char wbxml_version;
+-    unsigned char public_id;
+-    unsigned long charset;
+-    Octstr *binary;
++     unsigned char wbxml_version;
++     unsigned char public_id;
++     unsigned long charset;
++     Octstr *binary;
++     int code_page;
+ };
+ 
+ /*
+diff -urNad --exclude=CVS --exclude=.svn ./gwlib/cfg.def /tmp/dpep-work.9UOdUW/kannel-1.4.0/gwlib/cfg.def
+--- ./gwlib/cfg.def	2004-06-28 17:18:35.000000000 +0200
++++ /tmp/dpep-work.9UOdUW/kannel-1.4.0/gwlib/cfg.def	2005-08-25 18:28:50.000000000 +0200
+@@ -544,6 +544,69 @@
+     OCTSTR(unified-prefix)
+ )
+ 
++SINGLE_GROUP(mmsbox,
++	OCTSTR(name)
++	OCTSTR(hostname)
++	OCTSTR(host-alias)
++	OCTSTR(local-mmsc-domains)
++	OCTSTR(local-prefixes)
++	OCTSTR(storage-directory)
++	OCTSTR(max-send-threads)
++	OCTSTR(send-mail-prog)
++	OCTSTR(unified-prefix)
++	OCTSTR(maximum-send-attempts)
++	OCTSTR(default-message-expiry)
++	OCTSTR(queue-run-interval)
++	OCTSTR(send-attempt-back-off)
++	OCTSTR(sendsms-url)
++	OCTSTR(sendsms-username)
++	OCTSTR(sendsms-password)
++	OCTSTR(sendsms-global-sender)
++	OCTSTR(mms-port)
++	OCTSTR(mm7-port)
++	OCTSTR(allow-ip)
++	OCTSTR(deny-ip)
++	OCTSTR(email2mms-relay-prefixes)
++	OCTSTR(billing-module-parameters)
++	OCTSTR(billing-library)
++	OCTSTR(resolver-module-parameters)
++ 	OCTSTR(resolver-library)
++        OCTSTR(detokenizer-module-parameters)
++        OCTSTR(detokenizer-library)
++	OCTSTR(prov-server-notify-script)
++	OCTSTR(prov-server-sub-status-script)
++	OCTSTR(notify-unprovisioned)
++	OCTSTR(mms-notify-text)
++	OCTSTR(mms-notify-unprovisioned-text)
++	OCTSTR(mm-box-host)
++	OCTSTR(mms-to-email-txt)
++	OCTSTR(mms-to-email-html)
++	OCTSTR(mms-message-too-large-txt)
++	OCTSTR(mms-client-msisdn-header)
++	OCTSTR(mms-client-ip-header)
++        OCTSTR(allow-ip-type)
++        OCTSTR(optimize-notification-size)
++	OCTSTR(content-adaptation)	
++)
++
++MULTI_GROUP(mmsproxy,
++	OCTSTR(name)
++	OCTSTR(host)
++	OCTSTR(allowed-prefix)
++	OCTSTR(denied-prefix)
++)
++
++MULTI_GROUP(mms-vasp,
++	OCTSTR(vasp-id)
++	OCTSTR(type)
++	OCTSTR(short-code)
++	OCTSTR(vasp-username)
++	OCTSTR(vasp-password)
++	OCTSTR(vasp-url)
++	OCTSTR(mmsc-username)
++	OCTSTR(mmsc-password)
++)
++
+ #undef OCTSTR
+ #undef SINGLE_GROUP
+ #undef MULTI_GROUP
+diff -urNad --exclude=CVS --exclude=.svn ./gwlib/mime.c /tmp/dpep-work.9UOdUW/kannel-1.4.0/gwlib/mime.c
+--- ./gwlib/mime.c	2004-08-11 18:41:29.000000000 +0200
++++ /tmp/dpep-work.9UOdUW/kannel-1.4.0/gwlib/mime.c	2005-08-25 18:28:50.000000000 +0200
+@@ -191,11 +191,11 @@
+     value = http_header_value(headers, octstr_imm("Content-Type"));
+     boundary = http_get_header_parameter(value, octstr_imm("boundary"));
+     if (boundary == NULL) {
+-      boundary = octstr_format("_MIME_boundary-%d-%ld_%c_%c_bd%d", 
++      boundary = octstr_format("=_MIME_boundary_%d_%ld_%c_%c_bd%d", 
+ 			random(), (long)time(NULL), 'A' + (random()%26), 
+ 			       'a'+(random() % 26), random());
+-        octstr_append(value, octstr_imm("; boundary="));
+-        octstr_append(value, boundary);
++        octstr_format_append(value, "; boundary=\"%S\"", boundary);
++
+         http_header_remove_all(headers, "Content-Type");
+         http_header_add(headers, "Content-Type", octstr_get_cstr(value));
+         http_header_add(headers, "MIME-Version", "1.0");
+@@ -214,8 +214,8 @@
+         MIMEEntity *e = list_get(m->multiparts, i);
+         Octstr *body;
+ 
+-        if (i != 0)
+-            octstr_append(mime, octstr_imm("\r\n"));
++	if (i != 0)
++	     octstr_append(mime, octstr_imm("\r\n"));
+         octstr_append(mime, octstr_imm("\r\n--"));
+         octstr_append(mime, boundary);
+         octstr_append(mime, octstr_imm("\r\n"));
+@@ -331,10 +331,13 @@
+ 	    else
+ 		 octstr_delete(entity, 0, 1);
+ 
+-	    if (octstr_get_char(entity, octstr_len(entity) - 2) == '\r')
++	    if (octstr_get_char(entity, octstr_len(entity) - 2) == '\r' && 
++		octstr_get_char(entity, octstr_len(entity) - 4) == '\r')
+ 		 octstr_delete(entity, octstr_len(entity) - 4, 4);
++	    else if (octstr_get_char(entity, octstr_len(entity) - 2) == '\r')
++		octstr_delete(entity, octstr_len(entity) - 2, 2);
+ 	    else
+-		 octstr_delete(entity, octstr_len(entity) - 2, 2);
++		 octstr_delete(entity, octstr_len(entity) - 1, 1);
+ 
+ 
+             debug("mime.parse",0,"MIME multipart: Parsing entity:");
+@@ -443,6 +446,34 @@
+     return body;
+ }
+ 
++int mime_entity_body_and_headers(MIMEEntity *m, Octstr **body, List **headers)
++{
++     Octstr *os;
++     ParseContext *context;
++     
++     gw_assert(m != NULL && m->headers != NULL);
++     
++     os = mime_entity_to_octstr(m);
++     context = parse_context_create(os);
++     
++     *headers = http_create_empty_headers();
++     
++     /* parse the headers up to the body */
++     if ((read_mime_headers(context, *headers) != 0) ||*headers == NULL) {
++	  debug("mime.parse",0,"Failed to read MIME headers in Octstr block:");
++	  octstr_dump(os, 0);
++	  parse_context_destroy(context);
++	  return -1;
++     }
++     
++     /* the rest is the body */
++     *body = parse_get_rest(context);
++     
++     octstr_destroy(os);
++     
++     parse_context_destroy(context);
++     return 0;     
++}
+ 
+ /********************************************************************
+  * Routines for debugging purposes.
+diff -urNad --exclude=CVS --exclude=.svn ./gwlib/mime.h /tmp/dpep-work.9UOdUW/kannel-1.4.0/gwlib/mime.h
+--- ./gwlib/mime.h	2004-01-26 16:04:57.000000000 +0100
++++ /tmp/dpep-work.9UOdUW/kannel-1.4.0/gwlib/mime.h	2005-08-25 18:28:50.000000000 +0200
+@@ -141,6 +141,13 @@
+ Octstr *mime_entity_body(MIMEEntity *m);
+ 
+ /*
++ * Take a MIME multipart representation and return the headers and body as would 
++ * result from turning it into a string. 
++ * this then serves for http header and body...
++ */
++int mime_entity_body_and_headers(MIMEEntity *m, Octstr **body, List **headers);
++
++/*
+  * Dump the structure (hicharchical view) of the MIME representation
+  * structure into our DEBUG log level facility.
+  */
+diff -urNad --exclude=CVS --exclude=.svn ./Makefile.in /tmp/dpep-work.9UOdUW/kannel-1.4.0/Makefile.in
+--- ./Makefile.in	2004-08-24 23:50:09.000000000 +0200
++++ /tmp/dpep-work.9UOdUW/kannel-1.4.0/Makefile.in	2005-08-25 18:28:50.000000000 +0200
+@@ -262,9 +262,13 @@
+ 	$(INSTALL) $(man8pages) $(DESTDIR)$(mandir)/man8
+ 	$(INSTALL) -d $(DESTDIR)$(includedir)/kannel/gwlib
+ 	$(INSTALL_DATA) $(top_srcdir)/gwlib/*.h $(DESTDIR)$(includedir)/kannel/gwlib
++	$(INSTALL) -d $(DESTDIR)$(includedir)/kannel/wap
++	$(INSTALL_DATA) $(top_srcdir)/wap/*.h $(DESTDIR)$(includedir)/kannel/wap	
++	$(INSTALL_DATA) $(top_srcdir)/wap/*.def $(DESTDIR)$(includedir)/kannel/wap	
+ 	$(INSTALL_DATA) gw-config.h $(DESTDIR)$(includedir)/kannel
+ 	$(INSTALL) -d $(DESTDIR)$(libdir)/kannel
+ 	$(INSTALL_DATA) libgwlib.a $(DESTDIR)$(libdir)/kannel
++	$(INSTALL_DATA) libwap.a $(DESTDIR)$(libdir)/kannel
+ 
+ install-test: all
+ 	$(INSTALL) -d $(DESTDIR)$(libdir)/kannel
+@@ -356,6 +360,6 @@
+ 
+ gw-config: utils/foobar-config.sh Makefile
+ 	./utils/foobar-config.sh "-I$(includedir)/kannel @CFLAGS@" \
+-		"-L$(libdir)/kannel -lgwlib @LIBS@" \
++		"-L$(libdir)/kannel -lwap -lgwlib @LIBS@" \
+ 		"@VERSION@" > gw-config
+ 	chmod 0755 gw-config
+diff -urNad --exclude=CVS --exclude=.svn ./test/test_ppg.c /tmp/dpep-work.9UOdUW/kannel-1.4.0/test/test_ppg.c
+--- ./test/test_ppg.c	2004-10-13 09:38:13.000000000 +0200
++++ /tmp/dpep-work.9UOdUW/kannel-1.4.0/test/test_ppg.c	2005-08-25 18:28:50.000000000 +0200
+@@ -81,7 +81,7 @@
+ static int verbose = 1,
+            use_hardcoded = 0,
+            num_urls = 0,
+-           wait = 0,
++           xwait = 0,
+            use_headers = 0,
+            use_config = 0,
+            accept_binary = 0, 
+@@ -648,7 +648,7 @@
+             if (i >= max_pushes)
+ 	            goto receive_rest;
+             start_push(caller, i);
+-            if (wait)
++            if (xwait)
+                 gwthread_sleep(wait_seconds);
+             ++in_queue;
+         }
+@@ -784,7 +784,7 @@
+ 	    break; 
+             
+ 	    case 'i': 
+-	        wait = 1;
++	        xwait = 1;
+                 wait_seconds = atof(optarg);
+ 	    break;
+ 
+diff -urNad --exclude=CVS --exclude=.svn ./wap/wsp_headers.c /tmp/dpep-work.9UOdUW/kannel-1.4.0/wap/wsp_headers.c
+--- ./wap/wsp_headers.c	2004-08-08 22:39:56.000000000 +0200
++++ /tmp/dpep-work.9UOdUW/kannel-1.4.0/wap/wsp_headers.c	2005-08-25 18:28:50.000000000 +0200
+@@ -122,10 +122,9 @@
+     } else if (val > 127) {
+         *well_known_value = val - 128;
+         return WSP_FIELD_VALUE_ENCODED;
+-    } else if (val == WSP_QUOTE) {  /* 127 */
++    } else if (val == WSP_QUOTE || val == '"') {  /* 127 or quote -- this is not ideal, but... */
+         *well_known_value = -1;
+-        /* We already consumed the Quote */
+-        return WSP_FIELD_VALUE_NUL_STRING;
++	return WSP_FIELD_VALUE_NUL_STRING;
+     } else {
+         *well_known_value = -1;
+         /* Un-parse the character we just read */
+@@ -1487,7 +1486,7 @@
+         { WSP_HEADER_X_WAP_CONTENT_URI, pack_uri, 0},
+         { WSP_HEADER_X_WAP_INITIATOR_URI, pack_uri, 0},
+         { WSP_HEADER_X_WAP_APPLICATION_ID, wsp_pack_integer_string, 0},
+-        { WSP_HEADER_CONTENT_ID, wsp_pack_text, 0},
++        { WSP_HEADER_CONTENT_ID, wsp_pack_quoted_text, 0},
+         { WSP_HEADER_ENCODING_VERSION, wsp_pack_version_value, 0 }
+         // DAVI { WSP_HEADER_SET_COOKIE, pack_version_value, 0 }
+     };
+@@ -1616,13 +1615,23 @@
+ {
+     /* This check catches 0-length strings as well, because
+      * octstr_get_char will return -1. */
+-    if (octstr_get_char(text, 0) >= 128 || octstr_get_char(text, 0) < 32)
++    if (octstr_get_char(text, 0) >= 128 || octstr_get_char(text, 0) < 32 ||
++	octstr_get_char(text, 0) == '"') /* quote the quote as well. */
+         octstr_append_char(packed, WSP_QUOTE);
+     octstr_append(packed, text);
+     octstr_append_char(packed, 0);
+     return 0;
+ }
+ 
++/* Pack a string as quoted-text WAP WSP 203, Section 8.4.2.1 */
++int wsp_pack_quoted_text(Octstr *packed, Octstr *text)
++{
++     octstr_append_char(packed, '"');
++     octstr_append(packed,text);
++     octstr_append_char(packed,0);
++     return 0;
++}
++
+ /* Pack text as Quoted-string if it starts with a " character.
+  * Pack it as Text-string otherwise. */
+ static void pack_quoted_string(Octstr *packed, Octstr *text)
+@@ -1884,6 +1893,7 @@
+     keytoken = wsp_string_to_versioned_parameter(parm->key, WSP_1_2);
+    
+     if (keytoken >= 0) {
++	 Octstr *s;
+         /* Typed-parameter = Well-known-parameter-token Typed-value */
+         /* Well-known-parameter-token = Integer-value */
+         wsp_pack_integer_value(packed, keytoken);
+@@ -1904,7 +1914,12 @@
+                 }
+                 break;
+             case 1:  /* charset */
+-                tmp = wsp_string_to_charset(parm->value);
++		 
++		 s = octstr_duplicate(parm->value); /* lower-case it. */
++		 octstr_convert_range(s, 0, octstr_len(s), tolower);
++		 
++		 tmp = wsp_string_to_charset(s);
++		 octstr_destroy(s);
+                 if (tmp >= 0) {
+                     wsp_pack_integer_value(packed, tmp);
+                     return;
+diff -urNad --exclude=CVS --exclude=.svn ./wap/wsp_headers.h /tmp/dpep-work.9UOdUW/kannel-1.4.0/wap/wsp_headers.h
+--- ./wap/wsp_headers.h	2004-01-26 16:06:38.000000000 +0100
++++ /tmp/dpep-work.9UOdUW/kannel-1.4.0/wap/wsp_headers.h	2005-08-25 18:28:50.000000000 +0200
+@@ -141,6 +141,7 @@
+ int wsp_pack_date(Octstr *packet, Octstr *value);
+ int wsp_pack_retry_after(Octstr *packet, Octstr *value);
+ int wsp_pack_text(Octstr *packet, Octstr *value);
++int wsp_pack_quoted_text(Octstr *packed, Octstr *text);
+ int wsp_pack_integer_string(Octstr *packet, Octstr *value);
+ int wsp_pack_version_value(Octstr *packet, Octstr *value);
+ int wsp_pack_constrained_value(Octstr *packed, Octstr *text, long value);

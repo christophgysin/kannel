@@ -1,0 +1,3 @@
+debian/tmp/usr/lib/kannel/checks/* usr/lib/kannel/checks
+debian/tmp/usr/lib/kannel/test/* usr/lib/kannel/test
+debian/tmp/usr/share/doc/kannel/contrib usr/share/kannel

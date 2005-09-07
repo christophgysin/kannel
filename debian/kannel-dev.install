@@ -1,0 +1,3 @@
+debian/tmp/usr/bin/gw-config usr/bin
+debian/tmp/usr/lib/kannel/*.a usr/lib/kannel
+debian/tmp/usr/include/kannel/* usr/include/kannel

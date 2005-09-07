@@ -1,0 +1,7 @@
+debian/tmp/usr/bin/wmlsc usr/bin
+debian/tmp/usr/bin/wmlsdasm usr/bin
+debian/tmp/usr/bin/seewbmp usr/bin
+debian/tmp/usr/bin/mtbatch usr/bin
+debian/tmp/usr/sbin usr
+debian/tmp/usr/share/man usr/share
+debian/kannel.conf /etc/kannel/
