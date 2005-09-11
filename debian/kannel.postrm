@@ -26,7 +26,7 @@ case "$1" in
 	test -d /var/log/kannel && rm -fr /var/log/kannel
 	test -d /var/run/kannel && rm -fr /var/run/kannel
 	test -d /etc/kannel && rmdir /etc/kannel
-	userdel kannel 
+	userdel kannel >/dev/null 2>&1 || true
 	;;
     *)
         echo "postrm called with unknown argument \`$1'" >&2
