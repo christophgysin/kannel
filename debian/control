@@ -26,8 +26,8 @@ Package: kannel-extras
 Architecture: any
 Section: net
 Priority: optional
-Suggests: kannel, python
-Depends: ${shlibs:Depends}, kannel
+Suggests: python
+Depends: ${shlibs:Depends}, kannel (= ${Source-Version})
 Description: WAP and SMS gateway extras
  Kannel is a gateway for connecting WAP (Wireless Application Protocol)
  phones to the Internet. It also works as an SMS gateway, for providing
