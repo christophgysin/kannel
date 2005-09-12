@@ -1,31 +1,12 @@
-kannel (1.4.0-12) unstable; urgency=low
+kannel (1.4.0-13) unstable; urgency=low
 
-  * Removes suggests from kannel-extras
+  * Standards version changed to 3.6.2
   * Add Source-Version to kannel-extras depends
-
- -- Paul Dwerryhouse <paul@dwerryhouse.com.au>  Sun, 11 Sep 2005 11:00:52 +1000
-
-kannel (1.4.0-11) unstable; urgency=low
-
-  * Suppress output from userdel
-
- -- Paul Dwerryhouse <paul@dwerryhouse.com.au>  Sun, 11 Sep 2005 10:04:30 +1000
-
-kannel (1.4.0-10) unstable; urgency=low
-
   * kannel-extras now depends on kannel
-
- -- Paul Dwerryhouse <paul@dwerryhouse.com.au>  Wed,  7 Sep 2005 10:43:45 +1000
-
-kannel (1.4.0-8) unstable; urgency=low
-
+  * Removed suggests from kannel-extras
   * Change deluser to userdel to avoid having to put adduser into
     Pre-Depends.
-
- -- Paul Dwerryhouse <paul@dwerryhouse.com.au>  Wed,  7 Sep 2005 10:17:34 +1000
-
-kannel (1.4.0-7) unstable; urgency=low
-
+  * kannel 1.4 compiles successfully with gcc-3.4 (Closes: #275947)
   * Several changes provided by Loic Minier <lool@dooz.org>, to allow
     support for Mbuni, see below. (Closes: #325730)
   * Add dpatch support. [debian/control, debian/rules, debian/patches/00list]
@@ -37,7 +18,7 @@ kannel (1.4.0-7) unstable; urgency=low
   * Move gw-config helper from kannel to kannel-dev.
     [debian/kannel.install, debian/kannel-dev.install]
 
- -- Paul Dwerryhouse <paul@dwerryhouse.com.au>  Sun,  4 Sep 2005 21:34:16 +1000
+ -- Paul Dwerryhouse <paul@dwerryhouse.com.au>  Mon, 12 Sep 2005 10:56:59 +1000
 
 kannel (1.4.0-6) unstable; urgency=low
 

@@ -4,7 +4,7 @@ Priority: optional
 Maintainer: Paul Dwerryhouse <paul@dwerryhouse.com.au>
 Build-Depends: debhelper (>> 4.0.0), libxml2-dev, libssl-dev, openssl, libmysqlclient10-dev, libpam0g-dev, dpatch
 Build-Depends-Indep: debhelper (>> 4.0.0), docbook-dsssl, jadetex, transfig, imagemagick, gs, jade
-Standards-Version: 3.6.1.1
+Standards-Version: 3.6.2
 
 Package: kannel
 Architecture: any
