@@ -1,3 +1,9 @@
+kannel (1.4.0-16) unstable; urgency=low
+
+  * Updated debian/patches/00list for new patch
+
+ -- Paul Dwerryhouse <paul@dwerryhouse.com.au>  Mon, 24 Oct 2005 10:52:36 +1000
+
 kannel (1.4.0-15) unstable; urgency=low
 
   * Patch from Loic Minier <lool@dooz.org> to allow compilation on
