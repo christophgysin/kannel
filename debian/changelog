@@ -1,3 +1,10 @@
+kannel (1.4.0-17) unstable; urgency=low
+
+  * Patch from Stefan Huehner <stefan@huehner.org> to fix the namespace
+    problem when compiling against libmysqlclient15 (Closes: #343769)
+
+ -- Paul Dwerryhouse <paul@dwerryhouse.com.au>  Wed, 24 May 2006 10:21:59 +1000
+
 kannel (1.4.0-16) unstable; urgency=low
 
   * Updated debian/patches/00list for new patch
