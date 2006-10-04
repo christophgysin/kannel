@@ -7,6 +7,19 @@
 # Make sure that the Kannel binaries can be found in $BOXPATH or somewhere
 # else along $PATH.  run_kannel_box has to be in $BOXPATH.
 
+### BEGIN INIT INFO
+# Provides:          kannel
+# Required-Start:    $syslog
+# Required-Stop:     $syslog
+# Should-Start:      $local_fs $network
+# Should-Stop:       $local_fs $network
+# Default-Start:     2 3 4 5
+# Default-Stop:      0 1 6
+# Short-Description: SMS and WAP gateway
+# Description:       Kannel is a gateway for connecting WAP phones to the 
+#		     Internet. It also works as an SMS gateway.
+### END INIT INFO
+
 BOXPATH=/usr/sbin
 PIDFILES=/var/run/kannel
 CONF=/etc/kannel/kannel.conf
