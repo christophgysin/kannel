@@ -1,3 +1,10 @@
+kannel (1.4.1-2) unstable; urgency=low
+
+  * Loic Minier's patch to debian/rules to fix incorrect path being returned
+    by gw-config (Closes: 337616)
+
+ -- Paul Dwerryhouse <paul@dwerryhouse.com.au>  Sun, 15 Oct 2006 10:08:43 +1000
+
 kannel (1.4.1-1) unstable; urgency=low
 
   * New upstream release (Closes: #346429)
