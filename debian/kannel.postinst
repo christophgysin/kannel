@@ -29,15 +29,15 @@ case "$1" in
 	# Create a "kannel" user. This has modeled after the code in the postfix.deb
 	# postinst. We first try to set the ownership of /var/log/kannel. If that
 	# fails, we create the user and re-try. If that still fails, we abort.
-	if chown -c kannel.root /var/log/kannel /var/run/kannel 2>/dev/null
+	if chown -c kannel:root /var/log/kannel /var/run/kannel 2>/dev/null
 	then
 	    :
 	#elif adduser --system --group kannel
 	elif adduser --system --home /usr/lib/kannel --no-create-home --gecos "Kannel" kannel 
 	then
 	    sleep 1 # wait for user creation
-	    chown -c kannel.root /var/log/kannel
-	    chown -c kannel.root /var/run/kannel
+	    chown -c kannel:root /var/log/kannel
+	    chown -c kannel:root /var/run/kannel
 	fi
 
     ;;

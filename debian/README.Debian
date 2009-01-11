@@ -7,3 +7,6 @@ standards correctly, I have renamed it to kannel_x.y.z.tar.gz
 Additionally, the upstream tarball contains a debian/ directory; I have
 removed this directory in the Debian tarball.
 
+For additional documentation, install the kannel-docs package; documentation
+can then be found under file://usr/share/doc/kannels-docs
+

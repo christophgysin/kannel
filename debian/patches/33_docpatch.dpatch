@@ -1,0 +1,28 @@
+#! /bin/sh /usr/share/dpatch/dpatch-run
+## 33_docpatch.dpatch by Paul Dwerryhouse <paul@dwerryhouse.com.au>
+##
+## All lines beginning with `## DP:' are a description of the patch.
+## DP: Puts correct url to local docs in man pages
+
+@DPATCH@
+diff -urN kannel-1.4.1.old/gw/kannel.8 kannel-1.4.1/gw/kannel.8
+--- kannel-1.4.1.old/gw/kannel.8	2000-10-04 01:04:26.000000000 +1100
++++ kannel-1.4.1/gw/kannel.8	2009-01-11 11:07:46.000000000 +1100
+@@ -37,7 +37,7 @@
+ see 
+ .B http://www.kannel.org
+ or
+-.BR file://usr/doc/kannel/ .
++.BR file://usr/share/doc/kannel/ .
+ .SH "SEE ALSO"
+ .BR run_kannel_box (8),
+ .BR seewbmp (1).
+diff -urN kannel-1.4.1.old/utils/run_kannel_box.8 kannel-1.4.1/utils/run_kannel_box.8
+--- kannel-1.4.1.old/utils/run_kannel_box.8	2000-10-04 01:04:26.000000000 +1100
++++ kannel-1.4.1/utils/run_kannel_box.8	2009-01-11 11:08:11.000000000 +1100
+@@ -28,4 +28,4 @@
+ see 
+ .B http://www.kannel.org
+ or
+-.BR file://usr/doc/kannel/ .
++.BR file://usr/share/doc/kannel/ .

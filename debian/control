@@ -2,9 +2,10 @@ Source: kannel
 Section: net
 Priority: optional
 Maintainer: Paul Dwerryhouse <paul@dwerryhouse.com.au>
-Build-Depends: debhelper (>> 4.0.0), libxml2-dev, libssl-dev (>= 0.9.8-1), openssl, libmysqlclient15-dev, libpam0g-dev, dpatch
-Build-Depends-Indep: debhelper (>> 4.0.0), docbook-dsssl, jadetex, transfig, imagemagick, gs, jade
-Standards-Version: 3.7.2
+Build-Depends: debhelper (>> 4.0.0), libxml2-dev, libssl-dev (>= 0.9.8), openssl, libmysqlclient15-dev, libpam0g-dev, dpatch, autoconf, automake1.10
+Build-Depends-Indep: docbook-dsssl, jadetex, transfig, imagemagick, ghostscript, jade, docbook
+Homepage: http://www.kannel.org/
+Standards-Version: 3.8.0
 
 Package: kannel
 Architecture: any
@@ -15,44 +16,46 @@ Conflicts: kannel-devel, kannel-cvs
 Replaces: kannel-devel, kannel-cvs
 Description: WAP and SMS gateway
  Kannel is a gateway for connecting WAP (Wireless Application Protocol)
- phones to the Internet. It also works as an SMS gateway, for providing
+ phones to the Internet. It also works as an SMS/SMPP gateway, for providing
  SMS based services for GSM phones.
  .
- Compiled with ssl, mysql and native malloc.
+ Compiled with ssl, MySQL and native malloc.
  .
- More information available at http://www.kannel.org/
 
 Package: kannel-extras
 Architecture: any
 Section: net
 Priority: optional
 Suggests: python
-Depends: ${shlibs:Depends}, kannel (= ${Source-Version})
+Depends: ${shlibs:Depends}, kannel (= ${binary:Version})
 Description: WAP and SMS gateway extras
  Kannel is a gateway for connecting WAP (Wireless Application Protocol)
- phones to the Internet. It also works as an SMS gateway, for providing
+ phones to the Internet. It also works as an SMS/SMPP gateway, for providing
  SMS based services for GSM phones.
  .
  Test utilities and contrib data.
+ .
 
 Package: kannel-docs
 Architecture: all
-Section: net
+Section: doc
 Suggests: kannel
 Priority: optional
 Description: WAP and SMS gateway documentation
  Kannel is a gateway for connecting WAP (Wireless Application Protocol)
- phones to the Internet. It also works as an SMS gateway, for providing
+ phones to the Internet. It also works as an SMS/SMPP gateway, for providing
  SMS based services for GSM phones.
  .
  Documentation in html, rtf and pdf format.
+ .
 
 Package: kannel-dev
 Architecture: any
 Section: devel
 Description: WAP and SMS gateway headers and development files
  Kannel is a gateway for connecting WAP (Wireless Application Protocol)
- phones to the Internet. It also works as an SMS gateway, for providing
+ phones to the Internet. It also works as an SMS/SMPP gateway, for providing
  SMS based services for GSM phones.
  .
  Headers and development files.
+ .

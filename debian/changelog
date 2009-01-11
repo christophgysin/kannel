@@ -1,7 +1,23 @@
+kannel (1.4.1-3) unstable; urgency=low
+
+  * Added build-dep for docbook (Closes: #509970)
+  * Changed manpage references from file://usr/doc/kannel to
+    file://usr/share/doc/kannel (Closes: #510481)
+  * Added SMPP to package description (Closes: #465743)
+  * Upgraded to standards-version 3.8.0
+  * Updated config.guess and config.sub
+  * Changed gs to ghostscript in build-deps
+  * Changed libssl-dev build-dep from 0.9.8-1 to 0.9.8
+  * Changes ${Source-Version} to ${binary:Version}
+  * Added new Homepage: field in debian/control
+  * Put kannel-docs into doc Section
+
+ -- Paul Dwerryhouse <paul@dwerryhouse.com.au>  Sun, 11 Jan 2009 11:14:57 +1100
+
 kannel (1.4.1-2) unstable; urgency=low
 
   * Loic Minier's patch to debian/rules to fix incorrect path being returned
-    by gw-config (Closes: 337616)
+    by gw-config (Closes: #337616)
 
  -- Paul Dwerryhouse <paul@dwerryhouse.com.au>  Sun, 15 Oct 2006 10:08:43 +1000
 
