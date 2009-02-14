@@ -1,3 +1,11 @@
+kannel (1.4.1-4) unstable; urgency=low
+
+  * Applied patch from James Westby to use lsb_init 
+    functions (Closes: #511882,#464451)
+  * Added autotools-dev to Build-Depends (Closes: #511880)
+
+ -- Paul Dwerryhouse <paul@dwerryhouse.com.au>  Sat, 14 Feb 2009 12:09:25 +1100
+
 kannel (1.4.1-3) unstable; urgency=low
 
   * Added build-dep for docbook (Closes: #509970)

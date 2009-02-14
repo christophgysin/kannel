@@ -20,6 +20,8 @@
 #		     Internet. It also works as an SMS gateway.
 ### END INIT INFO
 
+. /lib/lsb/init-functions
+
 BOXPATH=/usr/sbin
 PIDFILES=/var/run/kannel
 CONF=/etc/kannel/kannel.conf
@@ -34,10 +36,16 @@ test -x $BOXPATH/bearerbox || exit 0
 
 test -r /etc/default/kannel && . /etc/default/kannel
 
+if [ ! -d $PIDFILES ]
+then
+	mkdir $PIDFILES
+	chown kannel:root $PIDFILES
+fi
+
 case "$1" in
   start)
-    echo -n "Starting WAP gateway:"
-    echo -n " bearerbox"
+    log_daemon_msg "Starting WAP gateway"
+    log_progress_msg "bearerbox"
     start-stop-daemon --start --quiet \
 	--pidfile $PIDFILES/kannel_bearerbox.pid \
 	--chuid kannel \
@@ -48,7 +56,7 @@ case "$1" in
 	$BOXPATH/bearerbox -v 4 -- $CONF
     sleep 1 # Wait for bearerbox
     test ! -z $START_WAPBOX && (
-    echo -n " wapbox"
+    log_progress_msg "wapbox"
 	start-stop-daemon --start --quiet \
     	    --pidfile $PIDFILES/kannel_wapbox.pid \
 	    --chuid kannel \
@@ -59,7 +67,7 @@ case "$1" in
 	    $BOXPATH/wapbox -v 4 -- $CONF
     )
     test ! -z $START_SMSBOX && (
-    echo -n " smsbox"
+    log_progress_msg "smsbox"
 	start-stop-daemon --start --quiet \
     	    --pidfile $PIDFILES/kannel_smsbox.pid \
 	    --chuid kannel \
@@ -69,28 +77,28 @@ case "$1" in
 	    --no-extra-args \
 	    $BOXPATH/smsbox -v 4 -- $CONF
     )
-    echo "."
+    log_end_msg 0
     ;;
 
   stop)
-    echo -n "Stopping WAP gateway:"
+    log_daemon_msg "Stopping WAP gateway"
     test ! -z $START_SMSBOX && (
-	echo -n " smsbox"
+	log_progress_msg "smsbox"
 	start-stop-daemon --stop --retry 5 --quiet \
     	    --pidfile $PIDFILES/kannel_smsbox.pid \
 	    --exec $BOXPATH/run_kannel_box
     )
     test ! -z $START_WAPBOX && (
-	echo -n " wapbox"
+	log_progress_msg "wapbox"
 	start-stop-daemon --stop --retry 5 --quiet \
     	    --pidfile $PIDFILES/kannel_wapbox.pid \
 	    --exec $BOXPATH/run_kannel_box
     )
-    echo -n " bearerbox"
+    log_progress_msg "bearerbox"
     start-stop-daemon --stop --retry 5 --quiet \
     	--pidfile $PIDFILES/kannel_bearerbox.pid \
 	--exec $BOXPATH/run_kannel_box
-    echo "."
+    log_end_msg 0
     ;;
 
   reload)

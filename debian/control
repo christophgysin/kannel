@@ -2,7 +2,7 @@ Source: kannel
 Section: net
 Priority: optional
 Maintainer: Paul Dwerryhouse <paul@dwerryhouse.com.au>
-Build-Depends: debhelper (>> 4.0.0), libxml2-dev, libssl-dev (>= 0.9.8), openssl, libmysqlclient15-dev, libpam0g-dev, dpatch, autoconf, automake1.10
+Build-Depends: debhelper (>> 4.0.0), libxml2-dev, libssl-dev (>= 0.9.8), openssl, libmysqlclient15-dev, libpam0g-dev, dpatch, autoconf, automake1.10, autotools-dev
 Build-Depends-Indep: docbook-dsssl, jadetex, transfig, imagemagick, ghostscript, jade, docbook
 Homepage: http://www.kannel.org/
 Standards-Version: 3.8.0
