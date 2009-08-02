@@ -1,2 +1,1 @@
 var/log/kannel
-var/run/kannel

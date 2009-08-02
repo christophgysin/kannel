@@ -1,3 +1,12 @@
+kannel (1.4.3-1) unstable; urgency=low
+
+  * New upstream release
+  * gw/kannel.8 - changed file:// to file:/// (Closes: #527227)
+  * Upgraded to standards-version 3.8.2
+  * Depends on psmisc for killall in logrotate script (Closes: #539856)
+
+ -- Paul Dwerryhouse <paul@dwerryhouse.com.au>  Sun,  2 Aug 2009 18:03:32 +1000
+
 kannel (1.4.1-4) unstable; urgency=low
 
   * Applied patch from James Westby to use lsb_init 

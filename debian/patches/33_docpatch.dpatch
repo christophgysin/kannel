@@ -13,7 +13,7 @@ diff -urN kannel-1.4.1.old/gw/kannel.8 kannel-1.4.1/gw/kannel.8
  .B http://www.kannel.org
  or
 -.BR file://usr/doc/kannel/ .
-+.BR file://usr/share/doc/kannel/ .
++.BR file:///usr/share/doc/kannel/ .
  .SH "SEE ALSO"
  .BR run_kannel_box (8),
  .BR seewbmp (1).

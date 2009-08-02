@@ -2,16 +2,16 @@ Source: kannel
 Section: net
 Priority: optional
 Maintainer: Paul Dwerryhouse <paul@dwerryhouse.com.au>
-Build-Depends: debhelper (>> 4.0.0), libxml2-dev, libssl-dev (>= 0.9.8), openssl, libmysqlclient15-dev, libpam0g-dev, dpatch, autoconf, automake1.10, autotools-dev
+Build-Depends: debhelper (>> 7.0.0), libxml2-dev, libssl-dev (>= 0.9.8), openssl, libmysqlclient15-dev, libpam0g-dev, dpatch, autoconf, automake1.10, autotools-dev
 Build-Depends-Indep: docbook-dsssl, jadetex, transfig, imagemagick, ghostscript, jade, docbook
 Homepage: http://www.kannel.org/
-Standards-Version: 3.8.0
+Standards-Version: 3.8.2
 
 Package: kannel
 Architecture: any
 Section: net
 Priority: optional
-Depends: ${shlibs:Depends}, adduser
+Depends: ${shlibs:Depends}, adduser, psmisc
 Conflicts: kannel-devel, kannel-cvs
 Replaces: kannel-devel, kannel-cvs
 Description: WAP and SMS gateway

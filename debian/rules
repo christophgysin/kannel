@@ -90,7 +90,7 @@ endif
 install: build
 	dh_testdir -a
 	dh_testroot -a
-	dh_clean -k -a
+	dh_prep
 	dh_installdirs -a
 	$(MAKE) install DESTDIR=$(CURDIR)/debian/tmp
 	$(MAKE) install-contrib DESTDIR=$(CURDIR)/debian/tmp
@@ -104,7 +104,7 @@ install: build
 install.indep: build.indep
 	dh_testdir -i
 	dh_testroot -i
-	dh_clean -k -i
+	dh_prep
 	dh_installdirs -i
 	$(MAKE) install-docs DESTDIR=$(CURDIR)/debian/tmp
 	dh_install -i
