@@ -21,4 +21,4 @@ diff -urN kannel-1.4.1.old/utils/run_kannel_box.8 kannel-1.4.1/utils/run_kannel_
  .B http://www.kannel.org
  or
 -.BR file://usr/doc/kannel/ .
-+.BR file://usr/share/doc/kannel/ .
++.BR file:///usr/share/doc/kannel/ .
