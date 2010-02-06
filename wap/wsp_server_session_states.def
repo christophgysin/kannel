@@ -1,7 +1,7 @@
 /* ==================================================================== 
  * The Kannel Software License, Version 1.0 
  * 
- * Copyright (c) 2001-2004 Kannel Group  
+ * Copyright (c) 2001-2005 Kannel Group  
  * Copyright (c) 1998-2001 WapIT Ltd.   
  * All rights reserved. 
  * 
@@ -101,7 +101,7 @@ ROW(NULL_SESSION,
 				sm->client_SDU_size = sdu;
 			}
 		} else {
-			sm->request_caps = list_create();
+			sm->request_caps = gwlist_create();
 		}
 
 		if (pdu->u.Connect.headers_len > 0) {

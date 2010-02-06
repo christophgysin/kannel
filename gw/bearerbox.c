@@ -1,7 +1,7 @@
 /* ==================================================================== 
  * The Kannel Software License, Version 1.0 
  * 
- * Copyright (c) 2001-2004 Kannel Group  
+ * Copyright (c) 2001-2005 Kannel Group  
  * Copyright (c) 1998-2001 WapIT Ltd.   
  * All rights reserved. 
  * 
@@ -108,7 +108,7 @@ List *flow_threads;
 
 /* and still more abuse; we use this list to put us into
  * 'suspend' state - if there are any producers (only core adds/removes them)
- * receiver/sender systems just sit, blocked in list_consume
+ * receiver/sender systems just sit, blocked in gwlist_consume
  */
 List *suspended;
 
@@ -144,9 +144,9 @@ static void set_shutdown_status(void)
     bb_status = BB_SHUTDOWN;
     
     if (old == BB_SUSPENDED)
-	list_remove_producer(suspended);
+	gwlist_remove_producer(suspended);
     if (old == BB_SUSPENDED || old == BB_ISOLATED)
-	list_remove_producer(isolated);
+	gwlist_remove_producer(isolated);
 }
 
 
@@ -236,11 +236,11 @@ static void wdp_router(void *arg)
 {
     Msg *msg;
 
-    list_add_producer(flow_threads);
+    gwlist_add_producer(flow_threads);
     
     while(bb_status != BB_DEAD) {
 
-	if ((msg = list_consume(outgoing_wdp)) == NULL)
+	if ((msg = gwlist_consume(outgoing_wdp)) == NULL)
 	    break;
 
 	gw_assert(msg_type(msg) == wdp_datagram);
@@ -256,7 +256,7 @@ static void wdp_router(void *arg)
     udp_die();
     /* smsc_endwdp(); */
 
-    list_remove_producer(flow_threads);
+    gwlist_remove_producer(flow_threads);
 }
 
 static int start_wap(Cfg *cfg)
@@ -345,7 +345,7 @@ static Cfg *init_bearerbox(Cfg *cfg)
 {
     CfgGroup *grp;
     Octstr *log, *val;
-    long loglevel;
+    long loglevel, store_dump_freq;
     int lf, m;
 #ifdef HAVE_LIBSSL
     Octstr *ssl_server_cert_file;
@@ -390,10 +390,15 @@ static Cfg *init_bearerbox(Cfg *cfg)
         octstr_destroy(log);
     }
 
+    if (cfg_get_integer(&store_dump_freq, grp,
+                           octstr_imm("store-dump-freq")) == -1)
+        store_dump_freq = -1;
+
     log = cfg_get(grp, octstr_imm("store-file"));
     /* initialize the store file */
     if (log != NULL) {
-        store_init(log);
+        if (store_init(log, store_dump_freq) == -1)
+            panic(0, "Could not start with store init failed.");
         octstr_destroy(log);
     }
 
@@ -424,10 +429,10 @@ static Cfg *init_bearerbox(Cfg *cfg)
 	
     /* if all seems to be OK by the first glimpse, real start-up */
     
-    outgoing_sms = list_create();
-    incoming_sms = list_create();
-    outgoing_wdp = list_create();
-    incoming_wdp = list_create();
+    outgoing_sms = gwlist_create();
+    incoming_sms = gwlist_create();
+    outgoing_wdp = gwlist_create();
+    incoming_wdp = gwlist_create();
 
     outgoing_sms_counter = counter_create();
     incoming_sms_counter = counter_create();
@@ -462,7 +467,7 @@ static Cfg *init_bearerbox(Cfg *cfg)
 	list = cfg_get_multi_group(cfg, octstr_imm("smsc"));
 	if (list != NULL) {
 	    start_smsc(cfg);
-	    list_destroy(list, NULL);
+	    gwlist_destroy(list, NULL);
 	}
     }
 #endif
@@ -488,22 +493,22 @@ static void empty_msg_lists(void)
 
 #ifndef NO_WAP
 
-    if (list_len(incoming_wdp) > 0 || list_len(outgoing_wdp) > 0)
+    if (gwlist_len(incoming_wdp) > 0 || gwlist_len(outgoing_wdp) > 0)
 	warning(0, "Remaining WDP: %ld incoming, %ld outgoing",
-	      list_len(incoming_wdp), list_len(outgoing_wdp));
+	      gwlist_len(incoming_wdp), gwlist_len(outgoing_wdp));
 
     info(0, "Total WDP messages: received %ld, sent %ld",
 	 counter_value(incoming_wdp_counter),
 	 counter_value(outgoing_wdp_counter));
 #endif
     
-    while((msg = list_extract_first(incoming_wdp))!=NULL)
+    while((msg = gwlist_extract_first(incoming_wdp))!=NULL)
 	msg_destroy(msg);
-    while((msg = list_extract_first(outgoing_wdp))!=NULL)
+    while((msg = gwlist_extract_first(outgoing_wdp))!=NULL)
 	msg_destroy(msg);
 
-    list_destroy(incoming_wdp, NULL);
-    list_destroy(outgoing_wdp, NULL);
+    gwlist_destroy(incoming_wdp, NULL);
+    gwlist_destroy(outgoing_wdp, NULL);
 
     counter_destroy(incoming_wdp_counter);
     counter_destroy(outgoing_wdp_counter);
@@ -513,9 +518,9 @@ static void empty_msg_lists(void)
 
     /* XXX we should record these so that they are not forever lost...
      */
-    if (list_len(incoming_sms) > 0 || list_len(outgoing_sms) > 0)
+    if (gwlist_len(incoming_sms) > 0 || gwlist_len(outgoing_sms) > 0)
 	debug("bb", 0, "Remaining SMS: %ld incoming, %ld outgoing",
-	      list_len(incoming_sms), list_len(outgoing_sms));
+	      gwlist_len(incoming_sms), gwlist_len(outgoing_sms));
 
     info(0, "Total SMS messages: received %ld, sent %ld",
 	 counter_value(incoming_sms_counter),
@@ -523,11 +528,32 @@ static void empty_msg_lists(void)
 
 #endif
 
-    list_destroy(incoming_sms, msg_destroy_item);
-    list_destroy(outgoing_sms, msg_destroy_item);
+    gwlist_destroy(incoming_sms, msg_destroy_item);
+    gwlist_destroy(outgoing_sms, msg_destroy_item);
     
     counter_destroy(incoming_sms_counter);
     counter_destroy(outgoing_sms_counter);
+}
+
+
+static void dispatch_into_queue(Msg *msg)
+{
+    gw_assert(msg != NULL),
+    gw_assert(msg_type(msg) == sms);
+
+    switch (msg->sms.sms_type) {
+        case mt_push:
+        case mt_reply:
+        case report_mt:
+            gwlist_append(outgoing_sms, msg);
+            break;
+        case mo:
+        case report_mo:
+            gwlist_append(incoming_sms, msg);
+            break;
+        default:
+            panic(0, "Not handled sms_type within store!");
+    }
 }
 
 
@@ -542,10 +568,10 @@ int main(int argc, char **argv)
     gwlib_init();
     start_time = time(NULL);
 
-    suspended = list_create();
-    isolated = list_create();
-    list_add_producer(suspended);
-    list_add_producer(isolated);
+    suspended = gwlist_create();
+    isolated = gwlist_create();
+    gwlist_add_producer(suspended);
+    gwlist_add_producer(isolated);
 
     cf_index = get_and_set_debugs(argc, argv, check_args);
 
@@ -564,7 +590,7 @@ int main(int argc, char **argv)
     
     report_versions("bearerbox");
 
-    flow_threads = list_create();
+    flow_threads = gwlist_create();
     
     init_bearerbox(cfg);
 
@@ -574,22 +600,23 @@ int main(int argc, char **argv)
 
     gwthread_sleep(5.0); /* give time to threads to register themselves */
 
-    if (store_load()== -1)
-	panic(0, "Cannot start with store-file failing");
+    if (store_load(dispatch_into_queue) == -1)
+        panic(0, "Cannot start with store-file failing");
     
     info(0, "MAIN: Start-up done, entering mainloop");
     if (bb_status == BB_SUSPENDED) {
-	info(0, "Gateway is now SUSPENDED by startup arguments");
+        info(0, "Gateway is now SUSPENDED by startup arguments");
     } else if (bb_status == BB_ISOLATED) {
-	info(0, "Gateway is now ISOLATED by startup arguments");
-	list_remove_producer(suspended);
+        info(0, "Gateway is now ISOLATED by startup arguments");
+        gwlist_remove_producer(suspended);
     } else {
-	smsc2_resume();
-	list_remove_producer(suspended);	
-	list_remove_producer(isolated);
+        smsc2_resume();
+        gwlist_remove_producer(suspended);	
+        gwlist_remove_producer(isolated);
     }
 
-    while(bb_status != BB_SHUTDOWN && bb_status != BB_DEAD && list_producer_count(flow_threads) > 0) {
+    while (bb_status != BB_SHUTDOWN && bb_status != BB_DEAD && 
+           gwlist_producer_count(flow_threads) > 0) {
         /* debug("bb", 0, "Main Thread: going to sleep."); */
         /*
          * Not infinite sleep here, because we should notice
@@ -614,7 +641,7 @@ int main(int argc, char **argv)
 
         if (bb_todo & BB_CHECKLEAKS) {
             warning(0, "SIGQUIT received, reporting memory usage.");
-	    gw_check_leaks();
+            gw_check_leaks();
             bb_todo = bb_todo & ~BB_CHECKLEAKS;
         }
     }
@@ -626,8 +653,8 @@ int main(int argc, char **argv)
     bb_shutdown();
 
     /* wait until flow threads exit */
-    while(list_consume(flow_threads)!=NULL)
-	;
+    while (gwlist_consume(flow_threads) != NULL)
+    ;
 
     info(0, "All flow threads have died, killing core");
     bb_status = BB_DEAD;
@@ -635,10 +662,11 @@ int main(int argc, char **argv)
 
     boxc_cleanup();
     smsc2_cleanup();
+    store_shutdown();
     empty_msg_lists();
-    list_destroy(flow_threads, NULL);
-    list_destroy(suspended, NULL);
-    list_destroy(isolated, NULL);
+    gwlist_destroy(flow_threads, NULL);
+    gwlist_destroy(suspended, NULL);
+    gwlist_destroy(isolated, NULL);
     mutex_destroy(status_mutex);
 
     alog_close();		/* if we have any */
@@ -652,7 +680,6 @@ int main(int argc, char **argv)
 
     return 0;
 }
-
 
 
 /*----------------------------------------------------------------
@@ -683,7 +710,6 @@ int bb_shutdown(void)
     debug("bb", 0, "shutting down udp");
     udp_shutdown();
 #endif
-    store_shutdown();
     
     return 0;
 }
@@ -697,9 +723,9 @@ int bb_isolate(void)
     }
     if (bb_status == BB_RUNNING) {
 	smsc2_suspend();
-	list_add_producer(isolated);
+	gwlist_add_producer(isolated);
     } else
-	list_remove_producer(suspended);
+	gwlist_remove_producer(suspended);
 
     bb_status = BB_ISOLATED;
     mutex_unlock(status_mutex);
@@ -715,10 +741,10 @@ int bb_suspend(void)
     }
     if (bb_status != BB_ISOLATED) {
 	smsc2_suspend();
-	list_add_producer(isolated);
+	gwlist_add_producer(isolated);
     }
     bb_status = BB_SUSPENDED;
-    list_add_producer(suspended);
+    gwlist_add_producer(suspended);
     mutex_unlock(status_mutex);
     return 0;
 }
@@ -731,11 +757,11 @@ int bb_resume(void)
 	return -1;
     }
     if (bb_status == BB_SUSPENDED)
-	list_remove_producer(suspended);
+	gwlist_remove_producer(suspended);
 
     smsc2_resume();
     bb_status = BB_RUNNING;
-    list_remove_producer(isolated);
+    gwlist_remove_producer(isolated);
     mutex_unlock(status_mutex);
     return 0;
 }
@@ -844,13 +870,13 @@ Octstr *bb_print_status(int status_type)
 	    octstr_get_cstr(version),
 	    s, t/3600/24, t/3600%24, t/60%60, t%60,
 	    counter_value(incoming_wdp_counter),
-	    list_len(incoming_wdp) + boxc_incoming_wdp_queue(),
+	    gwlist_len(incoming_wdp) + boxc_incoming_wdp_queue(),
 	    counter_value(outgoing_wdp_counter),
-	    list_len(outgoing_wdp) + udp_outgoing_queue(),
+	    gwlist_len(outgoing_wdp) + udp_outgoing_queue(),
 	    counter_value(incoming_sms_counter),
-	    list_len(incoming_sms),
+	    gwlist_len(incoming_sms),
 	    counter_value(outgoing_sms_counter),
-	    list_len(outgoing_sms),
+	    gwlist_len(outgoing_sms),
 	    store_messages(),
         (float)counter_value(incoming_sms_counter)/t,
         (float)counter_value(outgoing_sms_counter)/t,

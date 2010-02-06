@@ -1,7 +1,7 @@
 /* ==================================================================== 
  * The Kannel Software License, Version 1.0 
  * 
- * Copyright (c) 2001-2004 Kannel Group  
+ * Copyright (c) 2001-2005 Kannel Group  
  * Copyright (c) 1998-2001 WapIT Ltd.   
  * All rights reserved. 
  * 
@@ -105,44 +105,45 @@ List *wtp_unpack_wdp_datagram(WAPEvent *datagram)
 
      gw_assert(datagram->type == T_DUnitdata_Ind);
 
-     events = list_create();
+     events = gwlist_create();
         
      if (concatenated_message(datagram->u.T_DUnitdata_Ind.user_data)) {
-         data = octstr_duplicate(datagram->u.T_DUnitdata_Ind.user_data);
-	 octstr_delete(data, 0, 1);
+        data = octstr_duplicate(datagram->u.T_DUnitdata_Ind.user_data);
+        octstr_delete(data, 0, 1);
 
-         while (octstr_len(data) != 0) {
+        while (octstr_len(data) != 0) {
 
-	     if (octstr_get_bits(data, 0, 1) == 0) {
-	         pdu_len = octstr_get_char(data, 0);
-                 octstr_delete(data, 0, 1);
-
-             } else {
-		    pdu_len = octstr_get_bits(data, 1, 15);
-                    octstr_delete(data, 0, 2);
-             }
+            if (octstr_get_bits(data, 0, 1) == 0) {
+                pdu_len = octstr_get_char(data, 0);
+                octstr_delete(data, 0, 1);
+            } else {
+                pdu_len = octstr_get_bits(data, 1, 15);
+                octstr_delete(data, 0, 2);
+            }
       
-	     subdgram = wap_event_duplicate(datagram);
-	     octstr_destroy(subdgram->u.T_DUnitdata_Ind.user_data);
-             subdgram->u.T_DUnitdata_Ind.user_data =
-	          octstr_copy(data, 0, pdu_len);
-             wap_event_assert(subdgram);
-             event = unpack_wdp_datagram_real(subdgram);
-             wap_event_assert(event);
-             list_append(events, event);
-             octstr_delete(data, 0, pdu_len);
-             wap_event_destroy(subdgram);
-         }
+            subdgram = wap_event_duplicate(datagram);
+            octstr_destroy(subdgram->u.T_DUnitdata_Ind.user_data);
+            subdgram->u.T_DUnitdata_Ind.user_data = octstr_copy(data, 0, pdu_len);
+            wap_event_assert(subdgram);
+            if ((event = unpack_wdp_datagram_real(subdgram)) != NULL) {
+                wap_event_assert(event);
+                gwlist_append(events, event);
+            }
+            octstr_delete(data, 0, pdu_len);
+            wap_event_destroy(subdgram);
+        }
 
-     octstr_destroy(data);
+        octstr_destroy(data);
 
-     } else {
-          event = unpack_wdp_datagram_real(datagram); 
-          wap_event_assert(event);
-          list_append(events, event);
-     } 
+    } else if ((event = unpack_wdp_datagram_real(datagram)) != NULL) { 
+        wap_event_assert(event);
+        gwlist_append(events, event);
+    } else {
+        warning(0, "WTP: Dropping unhandled datagram data:");
+        octstr_dump(datagram->u.T_DUnitdata_Ind.user_data, 0, GW_WARNING);
+    }
 
-     return events;
+    return events;
 }
 
 /*
@@ -272,10 +273,10 @@ static WAPEvent *unpack_ack(WTP_PDU *pdu, WAPAddrTuple *addr_tuple)
 
     /* Set default to 0 because Ack on 1 piece message has no tpi */
     event->u.RcvAck.psn = 0;
-    num_tpis = list_len(pdu->options);
+    num_tpis = gwlist_len(pdu->options);
 
     for (i = 0; i < num_tpis; i++) {
-        tpi = list_get(pdu->options, i);
+        tpi = gwlist_get(pdu->options, i);
         if (tpi->type == TPI_PSN) {
             event->u.RcvAck.psn = octstr_get_bits(tpi->data,0,8);
             break;
@@ -350,18 +351,20 @@ WAPEvent *unpack_wdp_datagram_real(WAPEvent *datagram)
 
     if (truncated_datagram(datagram)) {
         warning(0, "WTP: got a truncated datagram, ignoring");
-	return NULL;
+        return NULL;
     }
 
     pdu = wtp_pdu_unpack(data);
 
-/*
- * Wtp_pdu_unpack returned NULL, we build a rcv error event. 
- */
+    /*
+     * wtp_pdu_unpack returned NULL, we have send here a rcv error event,
+     * but now we silently drop the packet. Because we can't figure out
+     * in the pack_error() call if the TID value and hence the direction
+     * inditation is really for initiator or responder. 
+     */
     if (pdu == NULL) {
-        error(0, "WTP: cannot unpack pdu, creating an error pdu");
-        event = pack_error(datagram);
-        return event;
+        error(0, "WTP: cannot unpack pdu, dropping packet.");
+        return NULL;
     }   		
 
     event = NULL;

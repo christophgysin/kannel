@@ -1,7 +1,7 @@
 /* ==================================================================== 
  * The Kannel Software License, Version 1.0 
  * 
- * Copyright (c) 2001-2004 Kannel Group  
+ * Copyright (c) 2001-2005 Kannel Group  
  * Copyright (c) 1998-2001 WapIT Ltd.   
  * All rights reserved. 
  * 
@@ -57,7 +57,7 @@
 /*
  * test_regex.c - test regex module
  *
- * Stipe Tolj <tolj@wapme-systems.de>
+ * Stipe Tolj <stolj@wapme.de>
  */
 
 #include <string.h>
@@ -88,11 +88,11 @@ int main(int argc, char **argv)
     info(0, "step 1: generic functions");
 
     /* compile */
-    if ((regexp = gw_regex_comp(re, REG_EXTENDED|REG_ICASE)) == NULL)
+    if ((regexp = gw_regex_comp(re, REG_EXTENDED)) == NULL)
         panic(0, "regex compilation failed!");
 
-    debug("regex",0,"RE: regex <%s> has %d subexpressions.",
-          octstr_get_cstr(re), regexp->re_nsub);
+    debug("regex",0,"RE: regex <%s> has %ld subexpressions.",
+          octstr_get_cstr(re), (long)regexp->re_nsub);
 
     /* execute */
     rc = gw_regex_exec(regexp, os, REGEX_MAX_SUB_MATCH, &pmatch[0], 0);
@@ -105,8 +105,17 @@ int main(int argc, char **argv)
               octstr_get_cstr(re), octstr_get_cstr(err));
         octstr_destroy(err);
     } else {
+        int i;
         char *rsub;
         debug("regex",0,"RE: regex <%s> matches.", octstr_get_cstr(re));
+        debug("regex",0,"RE: substring matches are:");
+        for (i = 0; i <= REGEX_MAX_SUB_MATCH; i++) {
+            if (pmatch[i].rm_so != -1 && pmatch[i].rm_eo != -1) {
+                Octstr *s = octstr_copy(os, pmatch[i].rm_so, pmatch[i].rm_eo - pmatch[i].rm_so);
+                debug("regex",0,"RE:  %d: <%s>", i, octstr_get_cstr(s));
+                octstr_destroy(s);
+            }
+        }
         rsub = gw_regex_sub(octstr_get_cstr(sub), octstr_get_cstr(os),
                             REGEX_MAX_SUB_MATCH, &pmatch[0]);
         debug("regex",0,"RE: substituted string is <%s>.", rsub);

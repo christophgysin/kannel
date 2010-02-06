@@ -1,7 +1,7 @@
 /* ==================================================================== 
  * The Kannel Software License, Version 1.0 
  * 
- * Copyright (c) 2001-2004 Kannel Group  
+ * Copyright (c) 2001-2005 Kannel Group  
  * Copyright (c) 1998-2001 WapIT Ltd.   
  * All rights reserved. 
  * 
@@ -78,6 +78,8 @@
 #include <libxml/tree.h>
 #include <libxml/debugXML.h>
 #include <libxml/encoding.h>
+#include <libxml/parser.h>
+#include <libxml/xmlerror.h>
 
 #include "gwlib/gwlib.h"
 #include "wml_compiler.h"
@@ -85,23 +87,24 @@
 
 /***********************************************************************
  * Declarations of data types. 
+ * 
+ * Binary code values are defined by OMNA, see 
+ * http://www.openmobilealliance.org/tech/omna/omna-wbxml-public-docid.htm
  */
 
 struct wml_externalid_t {
     char *string;
-    char value;
+    unsigned long value;
 };
 
 typedef struct wml_externalid_t wml_externalid_t;
 
-static wml_externalid_t wml_externalid[] = {
-    { "-//WAPFORUM//DTD WML 1.3//EN", 0x0A },
-    { "-//WAPFORUM//DTD WML 1.2//EN", 0x09 },
-    { "-//WAPFORUM//DTD WML 1.1//EN", 0x04 },
-    { "-//WAPFORUM//DTD WML 1.0//EN", 0x02 }
-};
+#define NUMBERED(name, strings) \
+    static const wml_externalid_t name##_strings[] = { strings };
+#define ASSIGN(string, number) { string, number },
+#include "wbxml_tokens.def"
 
-#define NUMBER_OF_WML_EXTERNALID sizeof(wml_externalid)/sizeof(wml_externalid[0])
+#define NUMBER_OF_WML_EXTERNALID ((long) sizeof(public_ids_strings)/sizeof(public_ids_strings[0]))
 
 struct wbxml_version_t {
     char *string;
@@ -111,9 +114,11 @@ struct wbxml_version_t {
 typedef struct wbxml_version_t wbxml_version_t;
 
 static wbxml_version_t wbxml_version[] = {
-    { "1.3", 0x03 },
-    { "1.2", 0x02 },
     { "1.1", 0x01 },
+    { "1.2", 0x02 },
+    { "1.3", 0x03 },
+    { "1.4", 0x04 },
+    { "1.5", 0x05 }
 };
 
 #define NUMBER_OF_WBXML_VERSION sizeof(wbxml_version)/sizeof(wbxml_version[0])
@@ -153,7 +158,7 @@ typedef struct {
 
 typedef struct {
     unsigned char wbxml_version;
-    unsigned char wml_public_id;
+    unsigned long wml_public_id;
     unsigned long character_set;
     unsigned long string_table_length;
     List *string_table;
@@ -216,6 +221,8 @@ Dict *wml_attributes_dict;
 List *wml_attr_values_list;
 
 List *wml_URL_values_list;
+
+int wml_xml_parser_opt;
 
 
 /***********************************************************************
@@ -320,6 +327,28 @@ static void string_table_output(Octstr *ostr, wml_binary_t **wbxml);
 
 
 /***********************************************************************
+ * Generic error message formater for libxml2 related errors
+ */
+
+static void xml_error(void)
+{
+    xmlErrorPtr err; 
+    Octstr *msg;
+    
+    /* we should have an error, but be more sensitive */
+    if ((err = xmlGetLastError()) == NULL)
+        return;
+        
+    /* replace annoying line feeds */    
+    msg = octstr_format("%s", err->message);
+    octstr_replace(msg, octstr_imm("\n"), octstr_imm(" "));
+    error(0,"XML error: code: %d, level: %d, line: %d, %s",
+          err->code, err->level, err->line, octstr_get_cstr(msg));
+    octstr_destroy(msg);
+}
+
+
+/***********************************************************************
  * Implementations of the functions declared in wml_compiler.h.
  */
 
@@ -335,7 +364,6 @@ int wml_compile(Octstr *wml_text, Octstr *charset, Octstr **wml_binary,
     xmlDocPtr pDoc = NULL;
     char *wml_c_text;
     wml_binary_t *wbxml = NULL;
-    Octstr *encoding = NULL;
 
     *wml_binary = octstr_create("");
     wbxml = wml_binary_create();
@@ -347,73 +375,44 @@ int wml_compile(Octstr *wml_text, Octstr *charset, Octstr **wml_binary,
        -- tuo */
     parse_entities(wml_text);
 
-    /* transcode from charset to UTF-8 */
-    if (charset && octstr_len(charset) && 
-        octstr_case_compare(charset, octstr_imm("UTF-8")) == -1) {
-        debug("wml_compile", 0, "WML compiler: Transcoding from <%s> to UTF-8", 
-              octstr_get_cstr(charset));
-        set_charset(wml_text, charset);
-    }
-
-    /* 
-     * If we did not set the character set encoding yet, then obviously
-     * there was no charset argument in the Content-Type HTTP reply header.
-     * We have to scan the xml preamble line for an explicite encoding
-     * definition to allow transcoding from UTF-8 to that charset after 
-     * libxml2 did all it's parsing magic. (Keep in mind libxml2 uses UTF-8
-     * as internal encoding.) -- Stipe
-     */
-
-    /* 
-     * We will trust the xml preamble encoding more then the HTTP header 
-     * charset definition.
-     */
-    if ((encoding = find_charset_encoding(wml_text)) != NULL) {
-        /* ok, we rely on the xml preamble encoding */
-    } else if (charset && octstr_len(charset) > 0) {
-        /* we had a HTTP response charset, use this */
-        encoding = octstr_duplicate(charset);
-    } else {
-        /* we had none, so use UTF-8 as default */
-        encoding = octstr_create("UTF-8");
-    }
-
     size = octstr_len(wml_text);
     wml_c_text = octstr_get_cstr(wml_text);
+    
+    debug("wml_compile",0, "WML: Given charset: %s", octstr_get_cstr(charset));
 
     if (octstr_search_char(wml_text, '\0', 0) != -1) {    
         error(0, "WML compiler: Compiling error: "
                  "\\0 character found in the middle of the WML source.");
         ret = -1;
     } else {
-
         /* 
          * An empty octet string for the binary output is created, the wml 
          * source is parsed into a parsing tree and the tree is then compiled 
          * into binary.
          */
-
-        pDoc = xmlParseMemory(wml_c_text, size);
-       
+         
+        pDoc = xmlReadMemory(wml_c_text, size, NULL, octstr_get_cstr(charset), 
+                             wml_xml_parser_opt);
+        
         if (pDoc != NULL) {
             /* 
              * If we have a set internal encoding, then apply this information 
              * to the XML parsing tree document for later transcoding ability.
              */
-            if (encoding)
-                pDoc->charset = xmlParseCharEncoding(octstr_get_cstr(encoding));
+            if (charset)
+                pDoc->charset = xmlParseCharEncoding(octstr_get_cstr(charset));
 
-            ret = parse_document(pDoc, encoding, &wbxml, version);
+            ret = parse_document(pDoc, charset, &wbxml, version);
             wml_binary_output(*wml_binary, wbxml);
         } else {    
             error(0, "WML compiler: Compiling error: "
-                     "libxml returned a NULL pointer");
+                     "libxml2 returned a NULL pointer");
+            xml_error();
             ret = -1;
         }
     }
 
     wml_binary_destroy(wbxml);
-    octstr_destroy(encoding);
 
     if (pDoc) 
         xmlFreeDoc(pDoc);
@@ -426,7 +425,7 @@ int wml_compile(Octstr *wml_text, Octstr *charset, Octstr **wml_binary,
  * Initialization: makes up the hash tables for the compiler.
  */
 
-void wml_init()
+void wml_init(int wml_xml_strict)
 {
     int i = 0, len = 0;
     wml_hash_t *temp = NULL;
@@ -447,22 +446,27 @@ void wml_init()
 
     /* Attribute values. */
     len = wml_table_len(wml_attribute_values);
-    wml_attr_values_list = list_create();
+    wml_attr_values_list = gwlist_create();
 
     for (i = 0; i < len; i++) {
 	temp = hash_create(wml_attribute_values[i].text, 
 			   wml_attribute_values[i].token);
-	list_append(wml_attr_values_list, temp);
+	gwlist_append(wml_attr_values_list, temp);
     }
 
     /* URL values. */
     len = wml_table_len(wml_URL_values);
-    wml_URL_values_list = list_create();
+    wml_URL_values_list = gwlist_create();
 
     for (i = 0; i < len; i++) {
 	temp = hash_create(wml_URL_values[i].text, wml_URL_values[i].token);
-	list_append(wml_URL_values_list, temp);
+	gwlist_append(wml_URL_values_list, temp);
     }
+    
+    /* Strict XML parsing. */
+    wml_xml_parser_opt = wml_xml_strict ? 
+            (XML_PARSE_NOERROR | XML_PARSE_NONET) :
+            (XML_PARSE_RECOVER | XML_PARSE_NOERROR | XML_PARSE_NONET);
 }
 
 
@@ -475,8 +479,8 @@ void wml_shutdown()
 {
     dict_destroy(wml_elements_dict);
     dict_destroy(wml_attributes_dict);
-    list_destroy(wml_attr_values_list, hash_destroy);
-    list_destroy(wml_URL_values_list, hash_destroy);
+    gwlist_destroy(wml_attr_values_list, hash_destroy);
+    gwlist_destroy(wml_URL_values_list, hash_destroy);
 }
 
 
@@ -604,8 +608,8 @@ static int parse_document(xmlDocPtr document, Octstr *charset,
         warning(0, "WBXML: WML without ExternalID, assuming 1.1");
     } else {
         for (i = 0; i < NUMBER_OF_WML_EXTERNALID; i++) {
-            if (octstr_compare(externalID, octstr_imm(wml_externalid[i].string)) == 0) {
-                (*wbxml)->wml_public_id = wml_externalid[i].value;
+            if (octstr_compare(externalID, octstr_imm(public_ids_strings[i].string)) == 0) {
+                (*wbxml)->wml_public_id = public_ids_strings[i].value;
                 debug("parse_document",0,"WBXML: WML with ExternalID <%s>",
                       octstr_get_cstr(externalID));
                 break;
@@ -630,6 +634,14 @@ static int parse_document(xmlDocPtr document, Octstr *charset,
         parse_charset(charset) : parse_charset(octstr_imm("UTF-8"));
 
     node = xmlDocGetRootElement(document);
+    
+    if (node == NULL) {
+        error(0, "WML compiler: XML parsing failed, no document root element.");
+        error(0, "Most probably an error in the WML source.");
+        xml_error();
+        return -1;
+    }
+    
     string_table_build(node, wbxml);
 
     return parse_node(node, wbxml);
@@ -664,7 +676,7 @@ static int parse_element(xmlNodePtr node, wml_binary_t **wbxml)
 	    if (check_do_elements(node) == -1) {
 		add_end_tag = -1;
 		error(0, "WML compiler: Two or more do elements with same"
-		      " name in a card or template element.");
+		         " name in a card or template element.");
 	    }
 	/* A conformance patch: if variable in setvar has a bad name, it's
 	   ignored. */
@@ -744,7 +756,7 @@ static int parse_attribute(xmlAttrPtr attr, wml_binary_t **wbxml)
 
     if ((attribute = dict_get(wml_attributes_dict, name)) != NULL) {
 	if (attr->children == NULL || 
-	    (hit = list_search(attribute->value_list, (void *)pattern, 
+	    (hit = gwlist_search(attribute->value_list, (void *)pattern, 
 			       hash_cmp)) == NULL) {
                 if(attribute->binary == 0x00) {
                     warning(0, "WML compiler: can't compile attribute %s%s%s%s", 
@@ -858,8 +870,8 @@ static int parse_attr_value(Octstr *attr_value, List *tokens,
 	    return -1;
     } else {
 
-	for (i = 0; i < list_len(tokens); i++) {
-	    temp = list_get(tokens, i);
+	for (i = 0; i < gwlist_len(tokens); i++) {
+	    temp = gwlist_get(tokens, i);
 	    pos = octstr_search(attr_value, temp->item, 0);
 	    switch (pos) {
 	    case -1:
@@ -895,7 +907,7 @@ static int parse_attr_value(Octstr *attr_value, List *tokens,
 	 */
 
 	if ((int) octstr_len(attr_value) > 0) {
-	    if (i < list_len(tokens))
+	    if (i < gwlist_len(tokens))
 		parse_attr_value(attr_value, tokens, wbxml, charset, default_esc);
 	    else
 		if (parse_st_octet_string(attr_value, 0, default_esc, wbxml) != 0)
@@ -1272,7 +1284,7 @@ static wml_binary_t *wml_binary_create(void)
     wbxml->wml_public_id = 0x00;
     wbxml->character_set = 0x00;
     wbxml->string_table_length = 0x00;
-    wbxml->string_table = list_create();
+    wbxml->string_table = gwlist_create();
     wbxml->wbxml_string = octstr_create("");
 
     return wbxml;
@@ -1287,7 +1299,7 @@ static wml_binary_t *wml_binary_create(void)
 static void wml_binary_destroy(wml_binary_t *wbxml)
 {
     if (wbxml != NULL) {
-	list_destroy(wbxml->string_table, NULL);
+	gwlist_destroy(wbxml->string_table, NULL);
 	octstr_destroy(wbxml->wbxml_string);
 	gw_free(wbxml);
     }
@@ -1302,7 +1314,7 @@ static void wml_binary_destroy(wml_binary_t *wbxml)
 static void wml_binary_output(Octstr *ostr, wml_binary_t *wbxml)
 {
     octstr_append_char(ostr, wbxml->wbxml_version);
-    octstr_append_char(ostr, wbxml->wml_public_id);
+    octstr_append_uintvar(ostr, wbxml->wml_public_id);
     octstr_append_uintvar(ostr, wbxml->character_set);
     octstr_append_uintvar(ostr, wbxml->string_table_length);
 
@@ -1394,7 +1406,7 @@ static wml_attribute_t *attribute_create(void)
     attr = gw_malloc(sizeof(wml_attribute_t));
     attr->attribute = NULL;
     attr->binary = 0;
-    attr->value_list = list_create();
+    attr->value_list = gwlist_create();
 
     return attr;
 }
@@ -1427,7 +1439,7 @@ static void attr_dict_construct(wml_table3_t *attributes, Dict *attr_dict)
 	    node->binary = attributes[i].token;
 	else {
 	    temp = hash_create(attributes[i].text2, attributes[i].token);
-	    list_append(node->value_list, (void *)temp);
+	    gwlist_append(node->value_list, (void *)temp);
 	}	
 	i++;
     } while (attributes[i].text1 != NULL);
@@ -1470,7 +1482,7 @@ static void attribute_destroy(void *p)
     node = p;
 
     octstr_destroy(node->attribute);
-    list_destroy(node->value_list, hash_destroy);
+    gwlist_destroy(node->value_list, hash_destroy);
     gw_free(node);
 }
 
@@ -1508,34 +1520,34 @@ static int check_do_elements(xmlNodePtr node)
     Octstr *name = NULL;
     List *name_list = NULL;
     
-    name_list = list_create();
+    name_list = gwlist_create();
 
     if ((child = node->children) != NULL) {
-	while (child != NULL) {
-	    if (strcmp(child->name, "do") == 0) {
-		name = get_do_element_name(child);
+        while (child != NULL) {
+            if (child->name && strcmp(child->name, "do") == 0) {
+                name = get_do_element_name(child);
 
-		if (name == NULL) {
-		    error(0, "WML compiler: no name or type in a do element");
-		    return -1;
-		}
+                if (name == NULL) {
+                    error(0, "WML compiler: no name or type in a do element");
+                    return -1;
+                }
 
-		for (i = 0; i < list_len(name_list); i ++)
-		    if (octstr_compare(list_get(name_list, i), name) == 0) {
-			octstr_destroy(name);
-			status = -1;
-			break;
-		    }
-		if (status != -1)
-		    list_append(name_list, name);
-		else
-		    break;
-	    }
-	    child = child->next;
-	}
+                for (i = 0; i < gwlist_len(name_list); i ++)
+                    if (octstr_compare(gwlist_get(name_list, i), name) == 0) {
+                        octstr_destroy(name);
+                        status = -1;
+                        break;
+                    }
+                if (status != -1)
+                    gwlist_append(name_list, name);
+                else
+                    break;
+            }
+            child = child->next;
+        }
     }
 
-    list_destroy(name_list, octstr_destroy_item);
+    gwlist_destroy(name_list, octstr_destroy_item);
 
     return status;
 }
@@ -1554,23 +1566,23 @@ static var_esc_t check_variable_name(xmlNodePtr node)
     var_esc_t ret = FAILED;
 
     if ((attr = node->properties) != NULL) {
-	while (attr != NULL) {
-	    if (strcmp(attr->name, "name") == 0) {
-		name = create_octstr_from_node(attr->children);
-		break;
-	    }
-	    attr = attr->next;
-	}
+        while (attr != NULL) {
+            if (attr->name && strcmp(attr->name, "name") == 0) {
+                name = create_octstr_from_node(attr->children);
+                break;
+            }
+            attr = attr->next;
+        }
     }
 
     if (attr == NULL) {
-	error(0, "WML compiler: no name in a setvar element");
-	return FAILED;
+        error(0, "WML compiler: no name in a setvar element");
+        return FAILED;
     }
 
     ret = check_variable_syntax(name, NOESC);
-
     octstr_destroy(name);
+    
     return ret;
 }
 
@@ -1588,24 +1600,24 @@ static Octstr *get_do_element_name(xmlNodePtr node)
     xmlAttrPtr attr; 
 
     if ((attr = node->properties) != NULL) {
-	while (attr != NULL) {
-	    if (strcmp(attr->name, "name") == 0) {
-		name = create_octstr_from_node(attr->children);
-		break;
-	    }
-	    attr = attr->next;
-	}
+        while (attr != NULL) {
+            if (attr->name && strcmp(attr->name, "name") == 0) {
+                name = create_octstr_from_node(attr->children);
+                break;
+            }
+            attr = attr->next;
+        }
 
-	if (attr == NULL) {
-	    attr = node->properties;
-	    while (attr != NULL) {
-		if (strcmp(attr->name, "type") == 0) {
-		    name = create_octstr_from_node(attr->children);
-		    break;
-		}
-		attr = attr->next;
-	    }
-	}
+        if (attr == NULL) {
+            attr = node->properties;
+            while (attr != NULL) {
+                if (attr->name && strcmp(attr->name, "type") == 0) {
+                    name = create_octstr_from_node(attr->children);
+                    break;
+                }
+                attr = attr->next;
+            }
+        }
     }
 
     return name;
@@ -1769,7 +1781,7 @@ static void string_table_build(xmlNodePtr node, wml_binary_t **wbxml)
     string_table_proposal_t *item = NULL;
     List *list = NULL;
 
-    list = list_create();
+    list = gwlist_create();
 
     string_table_collect_strings(node, list);
 
@@ -1783,12 +1795,12 @@ static void string_table_build(xmlNodePtr node, wml_binary_t **wbxml)
     }
 
     /* Memory cleanup. */
-    while (list_len(list)) {
-	item = list_extract_first(list);
+    while (gwlist_len(list)) {
+	item = gwlist_extract_first(list);
 	string_table_proposal_destroy(item);
     }
 
-    list_destroy(list, NULL);
+    gwlist_destroy(list, NULL);
 }
 
 
@@ -1814,7 +1826,7 @@ static void string_table_collect_strings(xmlNodePtr node, List *strings)
 	    octstr_strip_nonalphanums(string);
 
 	if (octstr_len(string) > WBXML_STRING_TABLE_MIN)
-	    list_append(strings, string);
+	    gwlist_append(strings, string);
 	else 
 	    octstr_destroy(string);
 	break;
@@ -1854,14 +1866,14 @@ static List *string_table_sort_list(List *start)
     string_table_proposal_t *item = NULL;
     List *sorted = NULL;
 
-    sorted = list_create();
+    sorted = gwlist_create();
 
-    while (list_len(start)) {
-	string = list_extract_first(start);
+    while (gwlist_len(start)) {
+	string = gwlist_extract_first(start);
       
 	/* Check whether the string is unique. */
-	for (i = 0; i < list_len(sorted); i++) {
-	    item = list_get(sorted, i);
+	for (i = 0; i < gwlist_len(sorted); i++) {
+	    item = gwlist_get(sorted, i);
 	    if (octstr_compare(item->string, string) == 0) {
 		octstr_destroy(string);
 		string = NULL;
@@ -1872,11 +1884,11 @@ static List *string_table_sort_list(List *start)
 	
 	if (string != NULL) {
 	    item = string_table_proposal_create(string);
-	    list_append(sorted, item);
+	    gwlist_append(sorted, item);
 	}
     }
 
-    list_destroy(start, NULL);
+    gwlist_destroy(start, NULL);
 
     return sorted;
 }
@@ -1894,20 +1906,20 @@ static List *string_table_add_many(List *sorted, wml_binary_t **wbxml)
     string_table_proposal_t *item = NULL;
     List *list = NULL;
 
-    list = list_create();
+    list = gwlist_create();
 
-    while (list_len(sorted)) {
-	item = list_extract_first(sorted);
+    while (gwlist_len(sorted)) {
+	item = gwlist_extract_first(sorted);
 
 	if (item->count > 1 && octstr_len(item->string) > 
 	    WBXML_STRING_TABLE_MIN) {
 	    string_table_add(octstr_duplicate(item->string), wbxml);
 	    string_table_proposal_destroy(item);
 	} else
-	    list_append(list, item);
+	    gwlist_append(list, item);
     }
 
-    list_destroy(sorted, NULL);
+    gwlist_destroy(sorted, NULL);
 
     return list;
 }
@@ -1925,8 +1937,8 @@ static List *string_table_collect_words(List *strings)
     string_table_proposal_t *item = NULL;
     List *list = NULL, *temp_list = NULL;
 
-    while (list_len(strings)) {
-	item = list_extract_first(strings);
+    while (gwlist_len(strings)) {
+	item = gwlist_extract_first(strings);
 
 	if (list == NULL) {
 	    list = octstr_split_words(item->string);
@@ -1934,15 +1946,15 @@ static List *string_table_collect_words(List *strings)
 	} else {
 	    temp_list = octstr_split_words(item->string);
 
-	    while ((word = list_extract_first(temp_list)) != NULL)
-		list_append(list, word);
+	    while ((word = gwlist_extract_first(temp_list)) != NULL)
+		gwlist_append(list, word);
 
-	    list_destroy(temp_list, NULL);
+	    gwlist_destroy(temp_list, NULL);
 	    string_table_proposal_destroy(item);
 	}
     }
 
-    list_destroy(strings, NULL);
+    gwlist_destroy(strings, NULL);
 
     return list;
 }
@@ -1962,8 +1974,8 @@ static unsigned long string_table_add(Octstr *ostr, wml_binary_t **wbxml)
     unsigned long i, offset = 0;
 
     /* Check whether the string is unique. */
-    for (i = 0; i < (unsigned long)list_len((*wbxml)->string_table); i++) {
-	item = list_get((*wbxml)->string_table, i);
+    for (i = 0; i < (unsigned long)gwlist_len((*wbxml)->string_table); i++) {
+	item = gwlist_get((*wbxml)->string_table, i);
 	if (octstr_compare(item->string, ostr) == 0) {
 	    octstr_destroy(ostr);
 	    return item->offset;
@@ -1977,7 +1989,7 @@ static unsigned long string_table_add(Octstr *ostr, wml_binary_t **wbxml)
 
     (*wbxml)->string_table_length = 
 	(*wbxml)->string_table_length + octstr_len(ostr) + 1;
-    list_append((*wbxml)->string_table, item);
+    gwlist_append((*wbxml)->string_table, item);
 
     return offset;
 }
@@ -1998,8 +2010,8 @@ static void string_table_apply(Octstr *ostr, wml_binary_t **wbxml)
 
     input = octstr_create("");
 
-    for (i = 0; i < list_len((*wbxml)->string_table); i++) {
-	item = list_get((*wbxml)->string_table, i);
+    for (i = 0; i < gwlist_len((*wbxml)->string_table); i++) {
+	item = gwlist_get((*wbxml)->string_table, i);
 
 	if (octstr_len(item->string) > WBXML_STRING_TABLE_MIN)
 	    /* No use to replace 1 to 3 character substring, the reference 
@@ -2065,7 +2077,7 @@ static void string_table_output(Octstr *ostr, wml_binary_t **wbxml)
 {
     string_table_t *item;
 
-    while ((item = list_extract_first((*wbxml)->string_table)) != NULL) {
+    while ((item = gwlist_extract_first((*wbxml)->string_table)) != NULL) {
 	octstr_insert(ostr, item->string, octstr_len(ostr));
 	octstr_append_char(ostr, WBXML_STR_END);
 	string_table_destroy(item);

@@ -1,7 +1,7 @@
 /* ==================================================================== 
  * The Kannel Software License, Version 1.0 
  * 
- * Copyright (c) 2001-2004 Kannel Group  
+ * Copyright (c) 2001-2005 Kannel Group  
  * Copyright (c) 1998-2001 WapIT Ltd.   
  * All rights reserved. 
  * 
@@ -58,11 +58,14 @@
  * fdset.c - module for managing a large collection of file descriptors
  */
 
+#include "gw-config.h"
+ 
 #include <stdlib.h>
 #include <unistd.h>
 #include <errno.h>
 
 #include "gwlib/gwlib.h"
+
 
 struct FDSet
 {
@@ -80,6 +83,11 @@ struct FDSet
     struct pollfd *pollinfo;
     int size;
     int entries;
+    
+    /* Array of times when appropriate fd got any event or events bitmask changed */
+    time_t *times;
+    /* timeout for this fdset */
+    long timeout;
 
     /* Arrays of callback and data fields.  They are kept in sync with
      * the pollinfo array, and are basically extra fields that we couldn't
@@ -163,11 +171,11 @@ static void action_destroy(struct action *action)
     if (action == NULL)
         return;
 
-    list_destroy(action->done, NULL);
+    gwlist_destroy(action->done, NULL);
     gw_free(action);
 }
 
-/* For use with list_destroy */
+/* For use with gwlist_destroy */
 static void action_destroy_item(void *action)
 {
     action_destroy(action);
@@ -186,15 +194,15 @@ static void submit_action(FDSet *set, struct action *action)
     gw_assert(set != NULL);
     gw_assert(action != NULL);
 
-    done = list_create();
-    list_add_producer(done);
+    done = gwlist_create();
+    gwlist_add_producer(done);
 
     action->done = done;
 
-    list_append(set->actions, action);
+    gwlist_append(set->actions, action);
     gwthread_wakeup(set->poll_thread);
 
-    sync = list_consume(done);
+    sync = gwlist_consume(done);
     gw_assert(sync == action);
 
     action_destroy(action);
@@ -205,7 +213,7 @@ static void submit_action(FDSet *set, struct action *action)
  */
 static void submit_action_nosync(FDSet *set, struct action *action)
 {
-    list_append(set->actions, action);
+    gwlist_append(set->actions, action);
     gwthread_wakeup(set->poll_thread);
 }
 
@@ -246,7 +254,7 @@ static int handle_action(FDSet *set, struct action *action)
     if (action->done == NULL)
 	action_destroy(action);
     else
-        list_produce(action->done, action);
+        gwlist_produce(action->done, action);
 
     return result;
 }
@@ -276,6 +284,7 @@ static void remove_entry(FDSet *set, int entry)
         set->pollinfo[entry] = set->pollinfo[set->entries - 1];
         set->callbacks[entry] = set->callbacks[set->entries - 1];
         set->datafields[entry] = set->datafields[set->entries - 1];
+        set->times[entry] = set->times[set->entries - 1];
     }
     set->entries--;
 }
@@ -307,45 +316,51 @@ static void poller(void *arg)
     struct action *action;
     int ret;
     int i;
+    time_t now;
 
     gw_assert(set != NULL);
 
     for (;;) {
-        while ((action = list_extract_first(set->actions)) != NULL) {
+        while ((action = gwlist_extract_first(set->actions)) != NULL) {
             /* handle_action returns -1 if the set was destroyed. */
             if (handle_action(set, action) < 0)
                 return;
         }
 
-        /* Block indefinitely, waiting for activity */
-        ret = gwthread_poll(set->pollinfo, set->entries, -1.0);
+        /* Block for defined timeout, waiting for activity */
+        ret = gwthread_poll(set->pollinfo, set->entries, set->timeout);
 
         if (ret < 0) {
-	    if (errno != EINTR) {
-                error(0, "Poller: can't handle error; sleeping 1 second.");
+            if (errno != EINTR) {
+                error(errno, "Poller: can't handle error; sleeping 1 second.");
                 gwthread_sleep(1.0);
             }
             continue;
         }
-
-	/* Callbacks may modify the table while we scan it, so be careful. */
-	set->scanning = 1;
+        time(&now);
+        /* Callbacks may modify the table while we scan it, so be careful. */
+        set->scanning = 1;
         for (i = 0; i < set->entries; i++) {
-            if (set->pollinfo[i].revents != 0)
+            if (set->pollinfo[i].revents != 0) {
                 set->callbacks[i](set->pollinfo[i].fd,
-                                  set->pollinfo[i].revents,
-                                  set->datafields[i]);
+                                set->pollinfo[i].revents,
+                                set->datafields[i]);
+                /* update event time */
+                time(&set->times[i]);
+            } else if (set->timeout > 0 && difftime(set->times[i] + set->timeout, now) <= 0) {
+                debug("gwlib.fdset", 0, "Timeout for fd:%d appeares.", set->pollinfo[i].fd);
+                set->callbacks[i](set->pollinfo[i].fd, POLLERR, set->datafields[i]);
+            }
         }
-	set->scanning = 0;
+        set->scanning = 0;
 
-	if (set->deleted_entries > 0)
-	    remove_deleted_entries(set);
+    if (set->deleted_entries > 0)
+        remove_deleted_entries(set);
     }
 }
 
 
-
-FDSet *fdset_create(void)
+FDSet *fdset_create_real(long timeout)
 {
     FDSet *new;
 
@@ -358,10 +373,12 @@ FDSet *fdset_create(void)
     new->pollinfo = gw_malloc(sizeof(new->pollinfo[0]) * new->size);
     new->callbacks = gw_malloc(sizeof(new->callbacks[0]) * new->size);
     new->datafields = gw_malloc(sizeof(new->datafields[0]) * new->size);
+    new->times = gw_malloc(sizeof(new->times[0]) * new->size);
+    new->timeout = timeout > 0 ? timeout : -1;
     new->scanning = 0;
     new->deleted_entries = 0;
 
-    new->actions = list_create();
+    new->actions = gwlist_create();
 
     new->poll_thread = gwthread_create(poller, new);
     if (new->poll_thread < 0) {
@@ -386,11 +403,12 @@ void fdset_destroy(FDSet *set)
         gw_free(set->pollinfo);
         gw_free(set->callbacks);
         gw_free(set->datafields);
-        if (list_len(set->actions) > 0) {
+        gw_free(set->times);
+        if (gwlist_len(set->actions) > 0) {
             error(0, "Destroying fdset with %ld pending actions.",
-                  list_len(set->actions));
+                  gwlist_len(set->actions));
         }
-        list_destroy(set->actions, action_destroy_item);
+        gwlist_destroy(set->actions, action_destroy_item);
         gw_free(set);
     } else {
         long thread = set->poll_thread;
@@ -428,6 +446,7 @@ void fdset_register(FDSet *set, int fd, int events,
                                    sizeof(set->callbacks[0]) * newsize);
         set->datafields = gw_realloc(set->datafields,
                                    sizeof(set->datafields[0]) * newsize);
+        set->times = gw_realloc(set->times, sizeof(set->times[0]) * newsize);
         set->size = newsize;
     }
 
@@ -440,6 +459,7 @@ void fdset_register(FDSet *set, int fd, int events,
     set->pollinfo[new].revents = 0;
     set->callbacks[new] = callback;
     set->datafields[new] = data;
+    time(&set->times[new]);
 }
 
 void fdset_listen(FDSet *set, int fd, int mask, int events)
@@ -478,6 +498,8 @@ void fdset_listen(FDSet *set, int fd, int mask, int events)
         set->pollinfo[entry].revents =
             set->pollinfo[entry].revents & (events | ~mask);
     }
+    
+    time(&set->times[entry]);
 }
 
 void fdset_unregister(FDSet *set, int fd)

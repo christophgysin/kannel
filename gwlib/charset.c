@@ -1,7 +1,7 @@
 /* ==================================================================== 
  * The Kannel Software License, Version 1.0 
  * 
- * Copyright (c) 2001-2004 Kannel Group  
+ * Copyright (c) 2001-2005 Kannel Group  
  * Copyright (c) 1998-2001 WapIT Ltd.   
  * All rights reserved. 
  * 
@@ -552,7 +552,7 @@ int charset_convert(Octstr *string, char *charset_from, char *charset_to)
     if (ret != -1) {
         /* conversion succeeded */
         octstr_delete(string, 0, octstr_len(string));
-        octstr_append_cstr(string, to_buf);
+        octstr_append_data(string, to_buf, pointer - to_buf);
     if (ret)
         debug("charset", 0, "charset_convert did %d non-reversible conversions", ret);
         ret = 0;

@@ -1,7 +1,7 @@
 /* ==================================================================== 
  * The Kannel Software License, Version 1.0 
  * 
- * Copyright (c) 2001-2004 Kannel Group  
+ * Copyright (c) 2001-2005 Kannel Group  
  * Copyright (c) 1998-2001 WapIT Ltd.   
  * All rights reserved. 
  * 
@@ -59,6 +59,7 @@
  */
 
 #include <stdlib.h>
+#include <arpa/inet.h>
 
 #include "gwlib/gwlib.h"
 #include "wap_addr.h"
@@ -70,6 +71,7 @@ WAPAddr *wap_addr_create(Octstr *address, long port)
     
     addr = gw_malloc(sizeof(*addr));
     addr->address = octstr_duplicate(address);
+    addr->iaddr = inet_addr(octstr_get_cstr(address));
     addr->port = port;
     return addr;
 }
@@ -78,15 +80,16 @@ WAPAddr *wap_addr_create(Octstr *address, long port)
 void wap_addr_destroy(WAPAddr *addr) 
 {
     if (addr != NULL) {
-	octstr_destroy(addr->address);
-	gw_free(addr);
+        octstr_destroy(addr->address);
+        gw_free(addr);
     }
 }
 
 
 int wap_addr_same(WAPAddr *a, WAPAddr *b) 
 {
-    return a->port == b->port && octstr_compare(a->address, b->address) == 0;
+    /* XXX which ordering gives the best heuristical performance? */
+    return a->port == b->port && a->iaddr == b->iaddr;
 }
 
 

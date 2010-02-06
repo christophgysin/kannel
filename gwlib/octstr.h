@@ -1,7 +1,7 @@
 /* ==================================================================== 
  * The Kannel Software License, Version 1.0 
  * 
- * Copyright (c) 2001-2004 Kannel Group  
+ * Copyright (c) 2001-2005 Kannel Group  
  * Copyright (c) 1998-2001 WapIT Ltd.   
  * All rights reserved. 
  * 
@@ -123,7 +123,7 @@ void octstr_shutdown(void);
 Octstr *octstr_create_real(const char *cstr, const char *file, long line,
                            const char *func);
 #define octstr_create(cstr) \
-    gw_claim_area(octstr_create_real((cstr), __FILE__, __LINE__, __func__))
+    (Octstr*)gw_claim_area(octstr_create_real((cstr), __FILE__, __LINE__, __func__))
 
 /*
  * Create an octet string from arbitrary binary data. The length of the
@@ -132,9 +132,9 @@ Octstr *octstr_create_real(const char *cstr, const char *file, long line,
 Octstr *octstr_create_from_data_real(const char *data, long len, const char *file,
                                      long line, const char *func);
 #define octstr_create_from_data(data, len) \
-    gw_claim_area(octstr_create_from_data_real((data), (len), __FILE__, __LINE__, __func__))
+    (Octstr*)gw_claim_area(octstr_create_from_data_real((data), (len), __FILE__, __LINE__, __func__))
 #define octstr_create_from_data_trace(data, len, file, line, func) \
-    gw_claim_area(octstr_create_from_data_real(data, len, file, line, func))
+    (Octstr*)gw_claim_area(octstr_create_from_data_real(data, len, file, line, func))
 
 
 /*
@@ -156,7 +156,7 @@ void octstr_destroy(Octstr *ostr);
 
 /*
  * Destroy an octet string. Wrapper around octstr_destroy that is callable
- * via list_destroy.
+ * via gwlist_destroy.
  */
 void octstr_destroy_item(void *os);
 
@@ -333,6 +333,12 @@ int octstr_ncompare(const Octstr *ostr1, const Octstr *ostr2, long n);
  */
 int octstr_str_compare(const Octstr *ostr1, const char *str);
 
+
+/*
+ * Like octstr_str_compare, except compares bytes without case sensitifity.
+ */
+int octstr_str_case_compare(const Octstr *ostr1, const char *str);
+ 
 
 /*
  * Same as octstr_str_compare, but comparing is done only up to n bytes.
@@ -517,7 +523,7 @@ List *octstr_split(const Octstr *os, const Octstr *sep);
 
 
 /*
- * Compare two octet strings in a manner suitable for list_search.
+ * Compare two octet strings in a manner suitable for gwlist_search.
  */
 int octstr_item_match(void *item, void *pattern);
 
@@ -529,9 +535,15 @@ int octstr_item_case_match(void *item, void *pattern);
 
 
 /*
- * Print debugging information about octet string.
+ * Print debugging information about octet string. This is abstracted to the
+ * various log levels we have: GW_DEBUG, GW_INFO, GW_WARNING, GW_ERROR
+ * 
+ * If a third parameter in the argument list is given, we will dump the
+ * octstr in that log level instead of the default GW_DEBUG level.
  */
-void octstr_dump(const Octstr *ostr, int level);
+void octstr_dump_real(const Octstr *ostr, int level, ...);
+#define octstr_dump(ostr, level, ...) \
+    octstr_dump_real(ostr, level, ##__VA_ARGS__)
 
 
 /*

@@ -1,7 +1,7 @@
 /* ==================================================================== 
  * The Kannel Software License, Version 1.0 
  * 
- * Copyright (c) 2001-2004 Kannel Group  
+ * Copyright (c) 2001-2005 Kannel Group  
  * Copyright (c) 1998-2001 WapIT Ltd.   
  * All rights reserved. 
  * 
@@ -98,10 +98,10 @@ void gwlib_shutdown(void)
     socket_shutdown();
     gwthread_shutdown();
     octstr_shutdown();
-    gw_check_leaks();
-    gwmem_shutdown();
     gwlib_protected_shutdown();
-    log_shutdown();
     uuid_shutdown();
+    gw_check_leaks();
+    log_shutdown();
+    gwmem_shutdown();
     init = 0;
 }

@@ -1,7 +1,7 @@
 /* ==================================================================== 
  * The Kannel Software License, Version 1.0 
  * 
- * Copyright (c) 2001-2004 Kannel Group  
+ * Copyright (c) 2001-2005 Kannel Group  
  * Copyright (c) 1998-2001 WapIT Ltd.   
  * All rights reserved. 
  * 
@@ -57,7 +57,7 @@
 /*
  * test_dbpool.c - test DBPool objects
  *
- * Stipe Tolj <tolj@wapme-systems.de>
+ * Stipe Tolj <stolj@wapme.de>
  * Alexander Malysh <a.malysh@centrium.de>
  */
              
@@ -197,14 +197,14 @@ static void oracle_client_thread(void *arg)
 #if 1 /* selects */
         if (dbpool_conn_select(pconn, sql, NULL, &result) == 0) {
             long i,j;
-            for (i=0; i < list_len(result); i++) {
-                List *row = list_get(result, i);
-                for (j=0; j < list_len(row); j++)
-                    debug("", 0, "col = %ld   value = '%s'", j, octstr_get_cstr(list_get(row,j)));
-                list_destroy(row, octstr_destroy_item);
+            for (i=0; i < gwlist_len(result); i++) {
+                List *row = gwlist_get(result, i);
+                for (j=0; j < gwlist_len(row); j++)
+                    debug("", 0, "col = %ld   value = '%s'", j, octstr_get_cstr(gwlist_get(row,j)));
+                gwlist_destroy(row, octstr_destroy_item);
             }
         }
-        list_destroy(result, NULL);
+        gwlist_destroy(result, NULL);
         dbpool_conn_produce(pconn);
 #else /* only updates */
         debug("", 0, "rows processed = %d ", dbpool_conn_update(pconn, sql, NULL));

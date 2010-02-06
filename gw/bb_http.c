@@ -1,7 +1,7 @@
 /* ==================================================================== 
  * The Kannel Software License, Version 1.0 
  * 
- * Copyright (c) 2001-2004 Kannel Group  
+ * Copyright (c) 2001-2005 Kannel Group  
  * Copyright (c) 1998-2001 WapIT Ltd.   
  * All rights reserved. 
  * 
@@ -405,7 +405,7 @@ static void httpd_serve(HTTPClient *client, Octstr *ourl, List *headers,
     /* debug("bb.http", 0, "Result: '%s'", octstr_get_cstr(final_reply));
      */
     http_destroy_headers(headers);
-    headers = list_create();
+    headers = gwlist_create();
     http_header_add(headers, "Content-Type", content_type);
 
     http_send_reply(client, HTTP_OK, headers, final_reply);

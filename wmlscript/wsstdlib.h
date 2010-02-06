@@ -1,7 +1,7 @@
 /* ==================================================================== 
  * The Kannel Software License, Version 1.0 
  * 
- * Copyright (c) 2001-2004 Kannel Group  
+ * Copyright (c) 2001-2005 Kannel Group  
  * Copyright (c) 1998-2001 WapIT Ltd.   
  * All rights reserved. 
  * 
@@ -55,16 +55,11 @@
  */ 
 
 /*
+ * wsstdlib.c - WTA and WTAI standard libraries related implementations
  *
- * wsstdlib.h
- *
- * Author: Markku Rossi <mtr@iki.fi>
- *
- * Copyright (c) 1999-2000 WAPIT OY LTD.
- *		 All rights reserved.
- *
- * Standard libraries.
- *
+ * Authors: 
+ * Markku Rossi <mtr@iki.fi>
+ * Stipe Tolj <stolj@wapme.de>
  */
 
 #ifndef WSSTDLIB_H

@@ -1,7 +1,7 @@
 /* ==================================================================== 
  * The Kannel Software License, Version 1.0 
  * 
- * Copyright (c) 2001-2004 Kannel Group  
+ * Copyright (c) 2001-2005 Kannel Group  
  * Copyright (c) 1998-2001 WapIT Ltd.   
  * All rights reserved. 
  * 
@@ -115,7 +115,7 @@ static int sms_to_client(Connection *client, Msg *msg)
     int len;
 
     debug("bb.sms", 0, "smsc_fake: sending message to client");
-    msg_dump(msg, 0);
+//    msg_dump(msg, 0);
 
     line = octstr_duplicate(msg->sms.sender);
     octstr_append_char(line, ' ');
@@ -224,7 +224,7 @@ static void msg_to_bb(SMSCConn *conn, Octstr *line)
     msg->sms.smsc_id = octstr_duplicate(conn->id);
 
     debug("bb.sms", 0, "smsc_fake: new message received");
-    msg_dump(msg, 0);
+//    msg_dump(msg, 0);
     bb_smscconn_receive(conn, msg);
     return;
 error:
@@ -243,7 +243,7 @@ static void main_connection_loop(SMSCConn *conn, Connection *client)
     Msg	*msg;
     double delay = 0;
 
-    if (conn->throughput) {
+    if (conn->throughput > 0) {
         delay = 1.0 / conn->throughput;
     }
 
@@ -256,7 +256,7 @@ static void main_connection_loop(SMSCConn *conn, Connection *client)
         if (conn_eof(client))
             goto eof;
 
-        while ((msg = list_extract_first(privdata->outgoing_queue)) != NULL) {
+        while ((msg = gwlist_extract_first(privdata->outgoing_queue)) != NULL) {
             if (sms_to_client(client, msg) == 1) {
 
                 /* 
@@ -297,7 +297,7 @@ static void main_connection_loop(SMSCConn *conn, Connection *client)
             }
 
             /* obey throughput speed limit, if any */
-            if (conn->throughput) {
+            if (conn->throughput > 0) {
                 gwthread_sleep(delay);
             }
         }
@@ -391,7 +391,7 @@ static void fake_listener(void *arg)
         mutex_lock(conn->flow_mutex);
         conn->status = SMSCCONN_RECONNECTING;
         mutex_unlock(conn->flow_mutex);
-        while ((msg = list_extract_first(privdata->outgoing_queue)) != NULL) {
+        while ((msg = gwlist_extract_first(privdata->outgoing_queue)) != NULL) {
             bb_smscconn_send_failed(conn, msg, SMSCCONN_FAILED_TEMPORARILY, NULL);
         }
     }
@@ -401,10 +401,10 @@ static void fake_listener(void *arg)
 
     conn->status = SMSCCONN_DEAD;
 
-    while ((msg = list_extract_first(privdata->outgoing_queue)) != NULL) {
+    while ((msg = gwlist_extract_first(privdata->outgoing_queue)) != NULL) {
         bb_smscconn_send_failed(conn, msg, SMSCCONN_FAILED_SHUTDOWN, NULL);
     }
-    list_destroy(privdata->outgoing_queue, NULL);
+    gwlist_destroy(privdata->outgoing_queue, NULL);
     octstr_destroy(privdata->allow_ip);
     octstr_destroy(privdata->deny_ip);
     gw_free(privdata);
@@ -422,7 +422,7 @@ static int add_msg_cb(SMSCConn *conn, Msg *sms)
     Msg *copy;
 
     copy = msg_duplicate(sms);
-    list_produce(privdata->outgoing_queue, copy);
+    gwlist_produce(privdata->outgoing_queue, copy);
 
     /*  
      * Send DLR if desired, which means first add the DLR entry 
@@ -463,7 +463,7 @@ static int shutdown_cb(SMSCConn *conn, int finish_sending)
 
     if (finish_sending == 0) {
         Msg *msg;
-        while((msg = list_extract_first(privdata->outgoing_queue)) != NULL) {
+        while((msg = gwlist_extract_first(privdata->outgoing_queue)) != NULL) {
             bb_smscconn_send_failed(conn, msg, SMSCCONN_FAILED_SHUTDOWN, NULL);
         }
     }
@@ -488,7 +488,7 @@ static long queued_cb(SMSCConn *conn)
     PrivData *privdata = conn->data;
     long ret;
     
-    ret = (privdata ? list_len(privdata->outgoing_queue) : 0);
+    ret = (privdata ? gwlist_len(privdata->outgoing_queue) : 0);
 
     /* use internal queue as load, maybe something else later */
 
@@ -532,7 +532,7 @@ int smsc_fake_create(SMSCConn *conn, CfgGroup *cfg)
 
     conn->name = octstr_format("FAKE:%d", privdata->port);
 
-    privdata->outgoing_queue = list_create();
+    privdata->outgoing_queue = gwlist_create();
     privdata->shutdown = 0;
 
     conn->status = SMSCCONN_CONNECTING;
@@ -551,7 +551,7 @@ int smsc_fake_create(SMSCConn *conn, CfgGroup *cfg)
 error:
     error(0, "Failed to create fake smsc connection");
     if (privdata != NULL) {
-        list_destroy(privdata->outgoing_queue, NULL);
+        gwlist_destroy(privdata->outgoing_queue, NULL);
         if (close(privdata->listening_socket == -1)) {
             error(errno, "smsc_fake: closing listening socket port %d failed",
                   privdata->listening_socket);

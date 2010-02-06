@@ -1,7 +1,7 @@
 /* ==================================================================== 
  * The Kannel Software License, Version 1.0 
  * 
- * Copyright (c) 2001-2004 Kannel Group  
+ * Copyright (c) 2001-2005 Kannel Group  
  * Copyright (c) 1998-2001 WapIT Ltd.   
  * All rights reserved. 
  * 
@@ -158,7 +158,8 @@ enum {
     HTTP_UNSUPPORTED_MEDIA_TYPE    = 415,
     HTTP_INTERNAL_SERVER_ERROR     = 500,
     HTTP_NOT_IMPLEMENTED           = 501,
-    HTTP_BAD_GATEWAY               = 502
+    HTTP_BAD_GATEWAY               = 502,
+    HTTP_SERVICE_UNAVAILABLE       = 503
 };
 
 /*
@@ -264,7 +265,7 @@ void parse_dump(HTTPURLParse *p);
  * pending requests have been served.
  */
 void http_use_proxy(Octstr *hostname, int port, List *exceptions,
-    	    	    Octstr *username, Octstr *password);
+    	    	    Octstr *username, Octstr *password, Octstr *exceptions_regex);
 void http_close_proxy(void);
 
 
@@ -351,9 +352,12 @@ void http_start_request(HTTPCaller *caller, int method, Octstr *url,
  * (the one passed to http_start request if non-NULL) or NULL if
  * http_caller_signal_shutdown has been called and there are no queued results.
  */
-void *http_receive_result(HTTPCaller *caller, int *status, Octstr **final_url,
-    	    	    	 List **headers, Octstr **body);
+void *http_receive_result_real(HTTPCaller *caller, int *status, Octstr **final_url,
+    	    	    	 List **headers, Octstr **body, int blocking);
 
+/* old compatibility mode, always blocking */
+#define http_receive_result(caller, status, final_url, headers, body) \
+    http_receive_result_real(caller, status, final_url, headers, body, 1);
 
 /***********************************************************************
  * HTTP server interface.
@@ -606,11 +610,11 @@ void http_add_basic_auth(List *headers, Octstr *username, Octstr *password);
  * field name.
  * 
  * Example:
- *    * assume to have "Content-Type: application/xml; charset=utf-8" 
+ *    * assume to have "Content-Type: application/xml; charset=UTF-8" 
  *    * within List *headers 
  *   value = http_header_value(headers, octstr_imm("Content-Type"))
  *   val = http_get_header_parameter(value, octstr_imm("charset"));
- * will return "utf-8" to lvalue.
+ * will return "UTF-8" to lvalue.
  */
 Octstr *http_get_header_parameter(Octstr *value, Octstr *parameter);
 

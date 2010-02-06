@@ -1,7 +1,7 @@
 /* ==================================================================== 
  * The Kannel Software License, Version 1.0 
  * 
- * Copyright (c) 2001-2004 Kannel Group  
+ * Copyright (c) 2001-2005 Kannel Group  
  * Copyright (c) 1998-2001 WapIT Ltd.   
  * All rights reserved. 
  * 
@@ -73,6 +73,7 @@ typedef struct CfgGroup CfgGroup;
 Cfg *cfg_create(Octstr *filename);
 void cfg_destroy(Cfg *cfg);
 int cfg_read(Cfg *cfg);
+void cfg_add_hooks(void *allowed, void *single);
 
 CfgGroup *cfg_get_single_group(Cfg *cfg, Octstr *name);
 List *cfg_get_multi_group(Cfg *cfg, Octstr *name);

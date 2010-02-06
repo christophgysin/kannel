@@ -1,7 +1,7 @@
 /* ==================================================================== 
  * The Kannel Software License, Version 1.0 
  * 
- * Copyright (c) 2001-2004 Kannel Group  
+ * Copyright (c) 2001-2005 Kannel Group  
  * Copyright (c) 1998-2001 WapIT Ltd.   
  * All rights reserved. 
  * 
@@ -60,7 +60,9 @@
  * Taken from gw/smsc/smpp_pdu.c writen by Lars Wirzenius.
  * This makes heavy use of C pre-processor macro magic.
  *
- * Stipe Tolj <tolj@wapme-systems.de>
+ * References: RFC2866 - RADIUS Accounting
+ * 
+ * Stipe Tolj <stolj@wapme.de>
  */
 
 
@@ -296,7 +298,8 @@ static Octstr *radius_type_convert(int type, Octstr *value)
                 int c = octstr_get_char(value, i);
                 Octstr *b = octstr_format("%d", c);
                 octstr_append(ret, b);
-                i < 3 ? octstr_append_cstr(ret, ".") : NULL;
+                if (i < 3)
+                    octstr_append_cstr(ret, ".");
                 octstr_destroy(b);
             }
             break;
@@ -419,25 +422,21 @@ int radius_authenticate_pdu(RADIUS_PDU *pdu, Octstr **data, Octstr *secret)
 
     stream = attributes = digest = NULL;
 
-    /* first extract attributes from raw data */
+    /* first extract attributes from raw data, where
+     * the first 20 octets are code, idendifier, length
+     * and authenticator value as described in RFC2866, sec. 3 */
     if (octstr_len(*data) > 20)
         attributes = octstr_copy(*data, 20, octstr_len(*data)-20);
   
     switch (pdu->type) {
         case 0x04:  /* Accounting-Request, see RFC2866, page 6 */
             stream = octstr_copy(*data, 0, 4);
-            octstr_append_cstr(stream, "0000000000000000");
+            octstr_append_data(stream, "\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0", 16);
             octstr_append(stream, attributes);
             octstr_append(stream, secret);
             digest = md5(stream);
             rc = octstr_compare(pdu->u.Accounting_Request.authenticator, 
                                 digest) == 0 ? 1 : 0;
-
-            debug("",0,"XXXX authenticator:");
-            octstr_dump(pdu->u.Accounting_Request.authenticator, 0);
-            debug("",0,"XXXX re-calc'ed digest:");
-            octstr_dump(digest, 0);
-
             break;
         case 0x05:  /* Accounting-Response, create Response authenticator */
             stream = octstr_duplicate(*data);
@@ -445,7 +444,6 @@ int radius_authenticate_pdu(RADIUS_PDU *pdu, Octstr **data, Octstr *secret)
             digest = md5(stream);
             octstr_delete(*data, 4, 16);
             octstr_insert(*data, digest, 4);
-
             break;
         default:
             break;

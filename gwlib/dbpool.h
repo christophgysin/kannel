@@ -1,7 +1,7 @@
 /* ==================================================================== 
  * The Kannel Software License, Version 1.0 
  * 
- * Copyright (c) 2001-2004 Kannel Group  
+ * Copyright (c) 2001-2005 Kannel Group  
  * Copyright (c) 1998-2001 WapIT Ltd.   
  * All rights reserved. 
  * 
@@ -57,7 +57,7 @@
 /*
  * dbpool.h - database pool functions
  *
- * Stipe Tolj <tolj@wapme-systems.de>
+ * Stipe Tolj <stolj@wapme-group.de>
  * Alexander Malysh <a.malysh@centrium.de>
  */
 
@@ -66,13 +66,14 @@
 
 #if defined(HAVE_MYSQL) || defined(HAVE_SDB) || \
     defined(HAVE_ORACLE) || defined(HAVE_SQLITE) || \
-    defined(HAVE_PGSQL)
+    defined(HAVE_PGSQL) || defined(HAVE_SQLITE3)
 #define HAVE_DBPOOL 1
 #endif
 
 /* supported databases for connection pools */
 enum db_type {
-	DBPOOL_MYSQL, DBPOOL_SDB, DBPOOL_ORACLE, DBPOOL_SQLITE, DBPOOL_PGSQL
+	DBPOOL_MYSQL, DBPOOL_SDB, DBPOOL_ORACLE, DBPOOL_SQLITE, DBPOOL_PGSQL,
+    DBPOOL_SQLITE3
 };
 
 
@@ -95,6 +96,7 @@ typedef struct DBPool DBPool;
 
 typedef struct {
     Octstr *host;
+    long port;
     Octstr *username;
     Octstr *password;
     Octstr *database;
@@ -104,9 +106,9 @@ typedef struct {
  * TODO Think how to get rid of it and have generic Conf struct
  */
 typedef struct {
-    Octstr *tnsname;
     Octstr *username;
     Octstr *password;
+    Octstr *tnsname;
 } OracleConf;
 
 typedef struct {
@@ -118,21 +120,25 @@ typedef struct {
 } SQLiteConf;
 
 typedef struct {
-    Octstr *pghost;
-    Octstr *pgport;
-    Octstr *pgoptions;
-    Octstr *pgtty;
-    Octstr *login;
-    Octstr *password;
-    Octstr *dbName;
-} PgSQLConf;
+    Octstr *file;
+} SQLite3Conf;
 
+typedef struct {
+    Octstr *host;
+    long port;
+    Octstr *username;
+    Octstr *password;
+    Octstr *database;
+    Octstr *options;    /* yet not used */
+    Octstr *tty;        /* yet not used */
+} PgSQLConf;
 
 typedef union {
     MySQLConf *mysql;
     SDBConf *sdb;
     OracleConf *oracle;
     SQLiteConf *sqlite;
+    SQLite3Conf *sqlite3;
     PgSQLConf *pgsql;
 } DBConf;
 
@@ -190,8 +196,8 @@ DBPoolConn *dbpool_conn_consume(DBPool *p);
  */
 void dbpool_conn_produce(DBPoolConn *conn);
 
-int inline dbpool_conn_select(DBPoolConn *conn, const Octstr *sql, List *binds, List **result);
-int inline dbpool_conn_update(DBPoolConn *conn, const Octstr *sql, List *binds);
+int dbpool_conn_select(DBPoolConn *conn, const Octstr *sql, List *binds, List **result);
+int dbpool_conn_update(DBPoolConn *conn, const Octstr *sql, List *binds);
 
 /*
  * Perfoms a check of all connections within the pool and tries to

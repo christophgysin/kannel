@@ -1,7 +1,7 @@
 /* ==================================================================== 
  * The Kannel Software License, Version 1.0 
  * 
- * Copyright (c) 2001-2004 Kannel Group  
+ * Copyright (c) 2001-2005 Kannel Group  
  * Copyright (c) 1998-2001 WapIT Ltd.   
  * All rights reserved. 
  * 
@@ -328,8 +328,8 @@ PDU(deliver_sm,
     INTEGER(esm_class, 1)
     INTEGER(protocol_id, 1)
     INTEGER(priority_flag, 1)
-    NULTERMINATED(schedule_delivery_time, 1)
-    NULTERMINATED(validity_period, 1)
+    NULTERMINATED(schedule_delivery_time, 17)
+    NULTERMINATED(validity_period, 17)
     INTEGER(registered_delivery, 1)
     INTEGER(replace_if_present_flag, 1)
     INTEGER(data_coding, 1)

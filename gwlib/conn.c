@@ -1,7 +1,7 @@
 /* ==================================================================== 
  * The Kannel Software License, Version 1.0 
  * 
- * Copyright (c) 2001-2004 Kannel Group  
+ * Copyright (c) 2001-2005 Kannel Group  
  * Copyright (c) 1998-2001 WapIT Ltd.   
  * All rights reserved. 
  * 
@@ -64,7 +64,7 @@
  * Jarkko Kovala <jarkko.kovala@iki.fi>
  *
  * SSL server implementation contributed by
- * Stipe Tolj <tolj@wapme-systems.de> for Wapme Systems AG
+ * Stipe Tolj <stolj@wapme.de> for Wapme Systems AG
  */
 
 /* TODO: unlocked_close() on error */
@@ -139,6 +139,7 @@ struct Connection
     FDSet *registered;
     conn_callback_t *callback;
     void *callback_data;
+    conn_callback_data_destroyer_t *callback_data_destroyer;
     /* Protected by inlock */
     int listening_pollin;
     /* Protected by outlock */
@@ -166,7 +167,7 @@ static void unlocked_register_pollout(Connection *conn, int onoff);
 #define unlock_out(conn) unlock_out_real(conn, __FILE__, __LINE__, __func__)
 
 /* Lock a Connection's read direction, if the Connection is unclaimed */
-static void lock_in(Connection *conn)
+static void inline lock_in(Connection *conn)
 {
     gw_assert(conn != NULL);
 
@@ -177,23 +178,21 @@ static void lock_in(Connection *conn)
 }
 
 /* Unlock a Connection's read direction, if the Connection is unclaimed */
-static void unlock_in_real(Connection *conn, char *file, int line, const char *func)
+static void inline unlock_in_real(Connection *conn, char *file, int line, const char *func)
 {
     int ret;
     gw_assert(conn != NULL);
 
-    if (!conn->claimed) {
-        if ((ret = mutex_unlock(conn->inlock)) != 0) {
-            panic(0, "%s:%ld: %s: Mutex unlock failed. " \
-		             "(Called from %s:%ld:%s.)", \
-			         __FILE__, (long) __LINE__, __func__, \
-			         file, (long) line, func);
-        }
-     }
+    if (!conn->claimed && (ret = mutex_unlock(conn->inlock)) != 0) {
+        panic(0, "%s:%ld: %s: Mutex unlock failed. "
+            "(Called from %s:%ld:%s.)",
+            __FILE__, (long) __LINE__, __func__,
+            file, (long) line, func);
+    }
 }
 
 /* Lock a Connection's write direction, if the Connection is unclaimed */
-static void lock_out(Connection *conn)
+static void inline lock_out(Connection *conn)
 {
     gw_assert(conn != NULL);
 
@@ -204,29 +203,27 @@ static void lock_out(Connection *conn)
 }
 
 /* Unlock a Connection's write direction, if the Connection is unclaimed */
-static void unlock_out_real(Connection *conn, char *file, int line, const char *func)
+static void inline unlock_out_real(Connection *conn, char *file, int line, const char *func)
 {
     int ret;
     gw_assert(conn != NULL);
 
-    if (!conn->claimed) {
-        if ((ret = mutex_unlock(conn->outlock)) != 0) {
-            panic(0, "%s:%ld: %s: Mutex unlock failed. " \
-		             "(Called from %s:%ld:%s.)", \
-			         __FILE__, (long) __LINE__, __func__, \
-			         file, (long) line, func);
-        }
-     }
+    if (!conn->claimed && (ret = mutex_unlock(conn->outlock)) != 0) {
+        panic(0, "%s:%ld: %s: Mutex unlock failed. "
+            "(Called from %s:%ld:%s.)",
+            __FILE__, (long) __LINE__, __func__,
+            file, (long) line, func);
+    }
 }
 
 /* Return the number of bytes in the Connection's output buffer */
-static long unlocked_outbuf_len(Connection *conn)
+static long inline unlocked_outbuf_len(Connection *conn)
 {
     return octstr_len(conn->outbuf) - conn->outbufpos;
 }
 
 /* Return the number of bytes in the Connection's input buffer */
-static long unlocked_inbuf_len(Connection *conn)
+static long inline unlocked_inbuf_len(Connection *conn)
 {
     return octstr_len(conn->inbuf) - conn->inbufpos;
 }
@@ -491,14 +488,15 @@ Connection *conn_open_tcp_nb_with_port(Octstr *host, int port, int our_port,
 
 int conn_is_connected(Connection *conn)
 {
-  if (conn->connected == yes) return 0;
-  return -1;
+  return conn->connected == yes ? 0 : -1;
 }
 
 int conn_get_connect_result(Connection *conn)
 {
-  int err,len;
-  len = sizeof(len);
+  int err;
+  socklen_t len;
+
+  len = sizeof(err);
   if (getsockopt(conn->fd, SOL_SOCKET, SO_ERROR, &err, &len) < 0) {
     return -1;
   }
@@ -551,6 +549,7 @@ Connection *conn_wrap_fd(int fd, int ssl)
     conn->registered = NULL;
     conn->callback = NULL;
     conn->callback_data = NULL;
+    conn->callback_data_destroyer = NULL;
     conn->listening_pollin = 0;
     conn->listening_pollout = 0;
 #ifdef HAVE_LIBSSL
@@ -595,8 +594,12 @@ void conn_destroy(Connection *conn)
     /* No locking done here.  conn_destroy should not be called
      * if any thread might still be interested in the connection. */
 
-    if (conn->registered)
+    if (conn->registered) {
         fdset_unregister(conn->registered, conn->fd);
+        /* call data destroyer if any */
+        if (conn->callback_data != NULL && conn->callback_data_destroyer != NULL)
+            conn->callback_data_destroyer(conn->callback_data);
+    }
 
     if (conn->fd >= 0) {
         /* Try to flush any remaining data */
@@ -674,8 +677,8 @@ int conn_error(Connection *conn)
 {
     int err;
 
-    lock_in(conn);
     lock_out(conn);
+    lock_in(conn);
     err = conn->io_error;
     unlock_in(conn);
     unlock_out(conn);
@@ -721,8 +724,8 @@ static void poll_callback(int fd, int revents, void *data)
      * fdset and set the error condition variable to let the upper layer
      * close and destroy the connection. */
     if (revents & (POLLERR|POLLHUP)) {
-        lock_in(conn);
         lock_out(conn);
+        lock_in(conn);
         if (conn->listening_pollin)
             unlocked_register_pollin(conn, 0);
         if (conn->listening_pollout)
@@ -756,8 +759,8 @@ static void poll_callback(int fd, int revents, void *data)
         conn->callback(conn, conn->callback_data);
 }
 
-int conn_register(Connection *conn, FDSet *fdset,
-                  conn_callback_t callback, void *data)
+int conn_register_real(Connection *conn, FDSet *fdset,
+                  conn_callback_t callback, void *data, conn_callback_data_destroyer_t *data_destroyer)
 {
     int events;
     int result = 0;
@@ -775,7 +778,11 @@ int conn_register(Connection *conn, FDSet *fdset,
     if (conn->registered == fdset) {
         /* Re-registering.  Change only the callback info. */
         conn->callback = callback;
+        /* call data destroyer if new data supplied */
+        if (conn->callback_data != NULL && conn->callback_data != data && conn->callback_data_destroyer != NULL)
+            conn->callback_data_destroyer(conn->callback_data);
         conn->callback_data = data;
+        conn->callback_data_destroyer = data_destroyer;
         result = 0;
     } else if (conn->registered) {
         /* Already registered to a different fdset. */
@@ -795,23 +802,27 @@ int conn_register(Connection *conn, FDSet *fdset,
         conn->registered = fdset;
         conn->callback = callback;
         conn->callback_data = data;
+        conn->callback_data_destroyer = data_destroyer;
         conn->listening_pollin = (events & POLLIN) != 0;
         conn->listening_pollout = (events & POLLOUT) != 0;
         fdset_register(fdset, conn->fd, events, poll_callback, conn);
         result = 0;
     }
 
-    unlock_out(conn);
     unlock_in(conn);
+    unlock_out(conn);
 
     return result;
 }
 
 void conn_unregister(Connection *conn)
 {
+    FDSet *set = NULL;
+    int fd;
+    
     gw_assert(conn != NULL);
 
-    if (conn->fd < 0)
+    if (conn == NULL || conn->fd < 0)
         return;
 
     /* We need both locks to update the registration information */
@@ -819,16 +830,25 @@ void conn_unregister(Connection *conn)
     lock_in(conn);
 
     if (conn->registered) {
-        fdset_unregister(conn->registered, conn->fd);
+        set = conn->registered;
+        fd = conn->fd;
         conn->registered = NULL;
         conn->callback = NULL;
+        /* call data destroyer */
+        if (conn->callback_data != NULL && conn->callback_data_destroyer != NULL)
+            conn->callback_data_destroyer(conn->callback_data);
         conn->callback_data = NULL;
+        conn->callback_data_destroyer = NULL;
         conn->listening_pollin = 0;
         conn->listening_pollout = 0;
     }
 
     unlock_in(conn);
     unlock_out(conn);
+    
+    /* now unregister from FDSet */
+    if (set != NULL)
+        fdset_unregister(set, fd);
 }
 
 int conn_wait(Connection *conn, double seconds)
@@ -1041,6 +1061,9 @@ Octstr *conn_read_fixed(Connection *conn, long length)
 {
     Octstr *result = NULL;
 
+    if (length < 1)
+        return NULL;
+
     /* See if the data is already available.  If not, try a read(),
      * then see if we have enough data after that.  If not, give up. */
     lock_in(conn);
@@ -1097,8 +1120,8 @@ Octstr *conn_read_withlen(Connection *conn)
 {
     Octstr *result = NULL;
     unsigned char lengthbuf[4];
-    long length;
-    int try;
+    long length = 0; /* for compiler please */
+    int try, retry;
 
     lock_in(conn);
 
@@ -1106,19 +1129,21 @@ Octstr *conn_read_withlen(Connection *conn)
         if (try > 1)
             unlocked_read(conn);
 
-retry:
-        /* First get the length. */
-        if (unlocked_inbuf_len(conn) < 4)
-            continue;
+        do {
+            retry = 0;
+            /* First get the length. */
+            if (unlocked_inbuf_len(conn) < 4)
+                continue;
 
-        octstr_get_many_chars(lengthbuf, conn->inbuf, conn->inbufpos, 4);
-        length = decode_network_long(lengthbuf);
+            octstr_get_many_chars(lengthbuf, conn->inbuf, conn->inbufpos, 4);
+            length = decode_network_long(lengthbuf);
 
-        if (length < 0) {
-            warning(0, "conn_read_withlen: got negative length, skipping");
-            conn->inbufpos += 4;
-            goto retry;
-         }
+            if (length < 0) {
+                warning(0, "conn_read_withlen: got negative length, skipping");
+                conn->inbufpos += 4;
+                retry = 1;
+             }
+        } while(retry == 1);
 
         /* Then get the data. */
         if (unlocked_inbuf_len(conn) - 4 < length)
@@ -1173,12 +1198,13 @@ Octstr *conn_read_packet(Connection *conn, int startmark, int endmark)
 X509 *conn_get_peer_certificate(Connection *conn) 
 {
     /* Don't know if it needed to be locked , but better safe as crash */
-    lock_in(conn);
     lock_out(conn);
+    lock_in(conn);
     if (conn->peer_certificate == NULL && conn->ssl != NULL)
         conn->peer_certificate = SSL_get_peer_certificate(conn->ssl);
     unlock_in(conn);
     unlock_out(conn);
+    
     return conn->peer_certificate;
 }
 
@@ -1230,6 +1256,8 @@ void openssl_init_locks(void)
 void openssl_shutdown_locks(void)
 {
     int c, maxlocks = CRYPTO_num_locks();
+
+    gw_assert(ssl_static_locks != NULL);
 
     /* remove call-back from the locks */
     CRYPTO_set_locking_callback(NULL);
@@ -1331,6 +1359,28 @@ static int verify_callback(int preverify_ok, X509_STORE_CTX *ctx)
     return preverify_ok;
 }
 
+void use_global_trusted_ca_file(Octstr *ssl_trusted_ca_file)
+{
+    if (ssl_trusted_ca_file != NULL) {
+	if (!SSL_CTX_load_verify_locations(global_ssl_context,
+					   octstr_get_cstr(ssl_trusted_ca_file),
+					   NULL)) {
+	    panic(0, "Failed to load SSL CA file: %s", octstr_get_cstr(ssl_trusted_ca_file));
+	} else {
+	    info(0, "Using CA root certificates from file %s",
+		 octstr_get_cstr(ssl_trusted_ca_file));
+	    SSL_CTX_set_verify(global_ssl_context,
+			       SSL_VERIFY_PEER,
+			       verify_callback);
+	}
+	
+    } else {
+	SSL_CTX_set_verify(global_ssl_context,
+			   SSL_VERIFY_NONE,
+			   NULL);
+    }
+}
+
 void conn_config_ssl (CfgGroup *grp)
 {
     Octstr *ssl_client_certkey_file = NULL;
@@ -1357,25 +1407,8 @@ void conn_config_ssl (CfgGroup *grp)
 
     ssl_trusted_ca_file = cfg_get(grp, octstr_imm("ssl-trusted-ca-file"));
     
-    if (ssl_trusted_ca_file != NULL) {
-	if (!SSL_CTX_load_verify_locations(global_ssl_context,
-					   octstr_get_cstr(ssl_trusted_ca_file),
-					   NULL)) {
-	    panic(0, "Failed to load SSL CA file: %s", octstr_get_cstr(ssl_trusted_ca_file));
-	} else {
-	    info(0, "Using CA root certificates from file %s",
-		 octstr_get_cstr(ssl_trusted_ca_file));
-	    SSL_CTX_set_verify(global_ssl_context,
-			       SSL_VERIFY_PEER,
-			       verify_callback);
-	}
-	
-    } else {
-	SSL_CTX_set_verify(global_ssl_context,
-			   SSL_VERIFY_NONE,
-			   NULL);
-    }
-    
+    use_global_trusted_ca_file(ssl_trusted_ca_file);
+
     octstr_destroy(ssl_client_certkey_file);
     octstr_destroy(ssl_server_cert_file);
     octstr_destroy(ssl_server_key_file);

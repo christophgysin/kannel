@@ -1,7 +1,7 @@
 /* ==================================================================== 
  * The Kannel Software License, Version 1.0 
  * 
- * Copyright (c) 2001-2004 Kannel Group  
+ * Copyright (c) 2001-2005 Kannel Group  
  * Copyright (c) 1998-2001 WapIT Ltd.   
  * All rights reserved. 
  * 
@@ -57,7 +57,7 @@
 /*
  * dbpool_mysql.c - implement MySQL operations for generic database connection pool
  *
- * Stipe Tolj <tolj@wapme-systems.de>
+ * Stipe Tolj <stolj@wapme.de>
  *      2003 Initial version.
  * Alexander Malysh <a.malysh@centrium.de>
  *      2003 Made dbpool more generic.
@@ -66,7 +66,8 @@
 #ifdef HAVE_MYSQL
 #include <mysql.h>
 
-static void* mysql_open_conn(const DBConf *db_conf)
+
+static void *mysql_open_conn(const DBConf *db_conf)
 {
     MYSQL *mysql = NULL;
     MySQLConf *conf = db_conf->mysql; /* make compiler happy */
@@ -89,7 +90,8 @@ static void* mysql_open_conn(const DBConf *db_conf)
     if (!mysql_real_connect(mysql, octstr_get_cstr(conf->host),
                             octstr_get_cstr(conf->username),
                             octstr_get_cstr(conf->password),
-                            octstr_get_cstr(conf->database), 0, NULL, 0)) {
+                            octstr_get_cstr(conf->database), 
+                            conf->port, NULL, 0)) {
         error(0, "MYSQL: can not connect to database!");
         error(0, "MYSQL: %s", mysql_error(mysql));
         goto failed;
@@ -102,9 +104,11 @@ static void* mysql_open_conn(const DBConf *db_conf)
     return mysql;
 
 failed:
-    if (mysql != NULL) gw_free(mysql);
+    if (mysql != NULL) 
+        gw_free(mysql);
     return NULL;
 }
+
 
 static void mysql_close_conn(void *conn)
 {
@@ -114,6 +118,7 @@ static void mysql_close_conn(void *conn)
     mysql_close((MYSQL*) conn);
     gw_free(conn);
 }
+
 
 static int mysql_check_conn(void *conn)
 {
@@ -129,6 +134,7 @@ static int mysql_check_conn(void *conn)
     return 0;
 }
 
+
 static void mysql_conf_destroy(DBConf *db_conf)
 {
     MySQLConf *conf = db_conf->mysql;
@@ -141,6 +147,7 @@ static void mysql_conf_destroy(DBConf *db_conf)
     gw_free(conf);
     gw_free(db_conf);
 }
+
 
 static struct db_ops mysql_ops = {
     .open = mysql_open_conn,

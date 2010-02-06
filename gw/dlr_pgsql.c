@@ -1,7 +1,7 @@
 /* ==================================================================== 
  * The Kannel Software License, Version 1.0 
  * 
- * Copyright (c) 2001-2004 Kannel Group  
+ * Copyright (c) 2001-2005 Kannel Group  
  * Copyright (c) 1998-2001 WapIT Ltd.   
  * All rights reserved. 
  * 
@@ -106,7 +106,8 @@ static inline int pgsql_update(const Octstr *sql)
     return ret;
 }
 
-static inline List* pgsql_select(const Octstr *sql)
+
+static inline List *pgsql_select(const Octstr *sql)
 {
     DBPoolConn *pc;
     List *ret = NULL;
@@ -128,11 +129,13 @@ static inline List* pgsql_select(const Octstr *sql)
     return ret;
 }
 
+
 static void dlr_pgsql_shutdown()
 {
     dbpool_destroy(pool);
     dlr_db_fields_destroy(fields);
 }
+
 
 static void dlr_pgsql_add(struct dlr_entry *entry)
 {
@@ -157,13 +160,14 @@ static void dlr_pgsql_add(struct dlr_entry *entry)
     dlr_entry_destroy(entry);
 }
 
-static struct dlr_entry* dlr_pgsql_get(const Octstr *smsc, const Octstr *ts, const Octstr *dst)
+
+static struct dlr_entry *dlr_pgsql_get(const Octstr *smsc, const Octstr *ts, const Octstr *dst)
 {
     struct dlr_entry *res = NULL;
     Octstr *sql;
     List *result, *row;
 
-    sql = octstr_format("SELECT %s, %s, %s, %s, %s, %s FROM %s WHERE %s='%s' AND %s='%s';",
+    sql = octstr_format("SELECT %s, %s, %s, %s, %s, %s FROM %s WHERE %s='%s' AND %s='%s' LIMIT 1;",
                         octstr_get_cstr(fields->field_mask), octstr_get_cstr(fields->field_serv),
                         octstr_get_cstr(fields->field_url), octstr_get_cstr(fields->field_src),
                         octstr_get_cstr(fields->field_dst), octstr_get_cstr(fields->field_boxc),
@@ -174,49 +178,51 @@ static struct dlr_entry* dlr_pgsql_get(const Octstr *smsc, const Octstr *ts, con
     result = pgsql_select(sql);
     octstr_destroy(sql);
 
-    if (result == NULL || list_len(result) < 1) {
+    if (result == NULL || gwlist_len(result) < 1) {
         debug("dlr.pgsql", 0, "no rows found");
-        while((row = list_extract_first(result)))
-            list_destroy(row, octstr_destroy_item);
-        list_destroy(result, NULL);
+        while((row = gwlist_extract_first(result)))
+            gwlist_destroy(row, octstr_destroy_item);
+        gwlist_destroy(result, NULL);
         return NULL;
     }
     
-    row = list_get(result, 0);
+    row = gwlist_get(result, 0);
 
     debug("dlr.pgsql", 0, "Found entry, col1=%s, col2=%s, col3=%s, col4=%s, col5=%s col6=%s",
-		    octstr_get_cstr(list_get(row, 0)),
-		    octstr_get_cstr(list_get(row, 1)),
-		    octstr_get_cstr(list_get(row, 2)),
-		    octstr_get_cstr(list_get(row, 3)),
-		    octstr_get_cstr(list_get(row, 4)),
-		    octstr_get_cstr(list_get(row, 5))
+		    octstr_get_cstr(gwlist_get(row, 0)),
+		    octstr_get_cstr(gwlist_get(row, 1)),
+		    octstr_get_cstr(gwlist_get(row, 2)),
+		    octstr_get_cstr(gwlist_get(row, 3)),
+		    octstr_get_cstr(gwlist_get(row, 4)),
+		    octstr_get_cstr(gwlist_get(row, 5))
 	 );
 
     res = dlr_entry_create();
     gw_assert(res != NULL);
-    res->mask        = atoi(octstr_get_cstr(list_get(row, 0)));
-    res->service     = octstr_duplicate(list_get(row, 1));
-    res->url         = octstr_duplicate(list_get(row, 2));
-    res->source      = octstr_duplicate(list_get(row, 3));
-    res->destination = octstr_duplicate(list_get(row, 4));
-    res->boxc_id     = octstr_duplicate(list_get(row, 5));
+    res->mask        = atoi(octstr_get_cstr(gwlist_get(row, 0)));
+    res->service     = octstr_duplicate(gwlist_get(row, 1));
+    res->url         = octstr_duplicate(gwlist_get(row, 2));
+    res->source      = octstr_duplicate(gwlist_get(row, 3));
+    res->destination = octstr_duplicate(gwlist_get(row, 4));
+    res->boxc_id     = octstr_duplicate(gwlist_get(row, 5));
     res->smsc        = octstr_duplicate(smsc);
 
-    while((row = list_extract_first(result)))
-        list_destroy(row, octstr_destroy_item);
-    list_destroy(result, NULL);
+    while((row = gwlist_extract_first(result)))
+        gwlist_destroy(row, octstr_destroy_item);
+    gwlist_destroy(result, NULL);
     
     return res;
 }
+
 
 static void dlr_pgsql_remove(const Octstr *smsc, const Octstr *ts, const Octstr *dst)
 {
     Octstr *sql;
 
     debug("dlr.pgsql", 0, "removing DLR from database");
-    sql = octstr_format("DELETE FROM %s WHERE %s='%s' AND %s='%s' LIMIT 1;",
-                        octstr_get_cstr(fields->table), octstr_get_cstr(fields->field_smsc),
+    sql = octstr_format("DELETE FROM %s WHERE oid = (SELECT oid FROM %s WHERE %s='%s' AND %s='%s' LIMIT 1);",
+                        octstr_get_cstr(fields->table), octstr_get_cstr(fields->table),
+                        octstr_get_cstr(fields->field_smsc),
                         octstr_get_cstr(smsc), octstr_get_cstr(fields->field_ts), octstr_get_cstr(ts));
 
 
@@ -224,14 +230,16 @@ static void dlr_pgsql_remove(const Octstr *smsc, const Octstr *ts, const Octstr 
     octstr_destroy(sql);
 }
 
+
 static void dlr_pgsql_update(const Octstr *smsc, const Octstr *ts, const Octstr *dst, int status)
 {
     Octstr *sql;
 
     debug("dlr.pgsql", 0, "updating DLR status in database");
-    sql = octstr_format("UPDATE %s SET %s=%d WHERE %s='%s' AND %s='%s' LIMIT 1;",
+    sql = octstr_format("UPDATE %s SET %s=%d WHERE oid = (SELECT oid FROM %s WHERE %s='%s' AND %s='%s' LIMIT 1);",
                         octstr_get_cstr(fields->table),
                         octstr_get_cstr(fields->field_status), status,
+                        octstr_get_cstr(fields->table),
                         octstr_get_cstr(fields->field_smsc), octstr_get_cstr(smsc),
                         octstr_get_cstr(fields->field_ts), octstr_get_cstr(ts));
     pgsql_update(sql);
@@ -250,18 +258,19 @@ static long dlr_pgsql_messages(void)
     res = pgsql_select(sql);
     octstr_destroy(sql);
 
-    if (res == NULL || list_len(res) < 1) {
+    if (res == NULL || gwlist_len(res) < 1) {
         error(0, "PGSQL: Could not get count of DLR table");
         ret = -1;
     } else {
-        ret = atol(octstr_get_cstr(list_get(list_get(res, 0), 0)));
+        ret = atol(octstr_get_cstr(gwlist_get(gwlist_get(res, 0), 0)));
     }
 
-    list_destroy(list_extract_first(res), octstr_destroy_item);
-    list_destroy(res, NULL);
+    gwlist_destroy(gwlist_extract_first(res), octstr_destroy_item);
+    gwlist_destroy(res, NULL);
         
     return ret;
 }
+
 
 static void dlr_pgsql_flush(void)
 {
@@ -273,7 +282,8 @@ static void dlr_pgsql_flush(void)
     octstr_destroy(sql);
 }
 
-static struct dlr_storage  handles = {
+
+static struct dlr_storage handles = {
     .type = "pgsql",
     .dlr_add = dlr_pgsql_add,
     .dlr_get = dlr_pgsql_get,
@@ -284,11 +294,13 @@ static struct dlr_storage  handles = {
     .dlr_flush = dlr_pgsql_flush
 };
 
-struct dlr_storage *dlr_init_pgsql(Cfg* cfg)
+
+struct dlr_storage *dlr_init_pgsql(Cfg *cfg)
 {
     CfgGroup *grp;
     List *grplist;
     Octstr *pgsql_host, *pgsql_user, *pgsql_pass, *pgsql_db, *pgsql_id;
+    long pgsql_port = 0;
     Octstr *p = NULL;
     long pool_size;
     DBConf *db_conf = NULL;
@@ -314,20 +326,21 @@ struct dlr_storage *dlr_init_pgsql(Cfg* cfg)
      * and search for the one we are looking for
      */
 
-     grplist = cfg_get_multi_group(cfg, octstr_imm("pgsql-connection"));
-     while (grplist && (grp = list_extract_first(grplist)) != NULL) {
+    grplist = cfg_get_multi_group(cfg, octstr_imm("pgsql-connection"));
+    while (grplist && (grp = gwlist_extract_first(grplist)) != NULL) {
         p = cfg_get(grp, octstr_imm("id"));
         if (p != NULL && octstr_compare(p, pgsql_id) == 0) {
             goto found;
         }
-        if (p != NULL) octstr_destroy(p);
-     }
-     panic(0, "DLR: PgSQL: connection settings for id '%s' are not specified!",
-           octstr_get_cstr(pgsql_id));
+        if (p != NULL) 
+            octstr_destroy(p);
+    }
+    panic(0, "DLR: PgSQL: connection settings for id '%s' are not specified!",
+          octstr_get_cstr(pgsql_id));
 
 found:
     octstr_destroy(p);
-    list_destroy(grplist, NULL);
+    gwlist_destroy(grplist, NULL);
 
     if (cfg_get_integer(&pool_size, grp, octstr_imm("max-connections")) == -1 || pool_size == 0)
         pool_size = 1;
@@ -340,6 +353,7 @@ found:
    	    panic(0, "DLR: PgSQL: directive 'password' is not specified!");
     if (!(pgsql_db = cfg_get(grp, octstr_imm("database"))))
    	    panic(0, "DLR: PgSQL: directive 'database' is not specified!");
+    cfg_get_integer(&pgsql_port, grp, octstr_imm("port"));  /* optional */
 
     /*
      * ok, ready to connect to the database
@@ -350,10 +364,11 @@ found:
     db_conf->pgsql = gw_malloc(sizeof(PgSQLConf));
     gw_assert(db_conf->pgsql != NULL);
 
-    db_conf->pgsql->pghost = pgsql_host;
-    db_conf->pgsql->login = pgsql_user;
+    db_conf->pgsql->host = pgsql_host;
+    db_conf->pgsql->port = pgsql_port;
+    db_conf->pgsql->username = pgsql_user;
     db_conf->pgsql->password = pgsql_pass;
-    db_conf->pgsql->dbName = pgsql_db;
+    db_conf->pgsql->database = pgsql_db;
 
     pool = dbpool_create(DBPOOL_PGSQL, db_conf, pool_size);
     gw_assert(pool != NULL);

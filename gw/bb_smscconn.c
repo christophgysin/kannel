@@ -1,7 +1,7 @@
 /* ==================================================================== 
  * The Kannel Software License, Version 1.0 
  * 
- * Copyright (c) 2001-2004 Kannel Group  
+ * Copyright (c) 2001-2005 Kannel Group  
  * Copyright (c) 1998-2001 WapIT Ltd.   
  * All rights reserved. 
  * 
@@ -63,7 +63,10 @@
  * routing, writing actual access logs, handling failed messages etc.
  *
  * Kalle Marjola 2000 for project Kannel
+ * Alexander Malysh <amalysh at kannel.org> 2003, 2004, 2005
  */
+ 
+#include "gw-config.h"
 
 #include <errno.h>
 #include <stdlib.h>
@@ -117,6 +120,10 @@ static regex_t *black_list_regex;
 
 static long router_thread = -1;
 
+/* message resend */
+static long sms_resend_frequency;
+static long sms_resend_retry;
+
 /*
  * Counter for catenated SMS messages. The counter that can be put into
  * the catenated SMS message's UDH headers is actually the lowest 8 bits.
@@ -137,8 +144,8 @@ static long route_incoming_to_smsc(SMSCConn *conn, Msg *msg);
 
 void bb_smscconn_ready(SMSCConn *conn)
 {
-    list_add_producer(flow_threads);
-    list_add_producer(incoming_sms);
+    gwlist_add_producer(flow_threads);
+    gwlist_add_producer(incoming_sms);
 }
 
 
@@ -154,8 +161,8 @@ void bb_smscconn_killed(void)
     /* NOTE: after status has been set to SMSCCONN_DEAD, bearerbox
      *   is free to release/delete 'conn'
      */
-    list_remove_producer(incoming_sms);
-    list_remove_producer(flow_threads);
+    gwlist_remove_producer(incoming_sms);
+    gwlist_remove_producer(flow_threads);
 }
 
 
@@ -163,9 +170,17 @@ static void handle_split(SMSCConn *conn, Msg *msg, long reason)
 {
     struct split_parts *split = msg->sms.split_parts;
     
-    /* if temporarely failed, try again immediately */
-    if (reason == SMSCCONN_FAILED_TEMPORARILY && smscconn_send(conn, msg) == 0)
+    /*
+     * If temporarely failed, try again immediately but only if connection active.
+     * Because if connection is not active we will loop for ever here consuming 100% CPU
+     * time due to internal queue cleanup in smsc module that call bb_smscconn_failed.
+     */
+    if (reason == SMSCCONN_FAILED_TEMPORARILY && smscconn_status(conn) == SMSCCONN_ACTIVE &&
+        smscconn_send(conn, msg) == 0) {
+        /* destroy this message because it will be duplicated in smsc module */
+        msg_destroy(msg);
         return;
+    }
     
     /*
      * if the reason is not a success and status is still success
@@ -215,6 +230,7 @@ void bb_smscconn_sent(SMSCConn *conn, Msg *sms, Octstr *reply)
 {
     if (sms->sms.split_parts != NULL) {
         handle_split(conn, sms, SMSCCONN_SUCCESS);
+        octstr_destroy(reply);
         return;
     }
     
@@ -250,15 +266,38 @@ void bb_smscconn_send_failed(SMSCConn *conn, Msg *sms, int reason, Octstr *reply
 {
     if (sms->sms.split_parts != NULL) {
         handle_split(conn, sms, reason);
+        octstr_destroy(reply);
         return;
     }
     
     switch (reason) {
-
-    case SMSCCONN_FAILED_SHUTDOWN:
     case SMSCCONN_FAILED_TEMPORARILY:
-	list_produce(outgoing_sms, sms);
-	break;
+        /*
+         * Check if SMSC link alive and if so increase resend_try and set resend_time.
+         * If SMSC link is not active don't increase resend_try and don't set resend_time
+         * because we don't want to delay messages because of connection broken.
+         */
+       if (conn && smscconn_status(conn) == SMSCCONN_ACTIVE) {
+            /*
+             * Check if sms_resend_retry set and this msg has exceeded a limit also
+             * honor "single shot" with sms_resend_retry set to zero.
+             */
+           if (sms_resend_retry >= 0 && sms->sms.resend_try >= sms_resend_retry) {
+               warning(0, "Maximum retries for message exceeded, discarding it!");
+               bb_smscconn_send_failed(NULL, sms, SMSCCONN_FAILED_DISCARDED, 
+                                       octstr_create("Retries Exceeded"));
+               break;
+           }
+           sms->sms.resend_try = (sms->sms.resend_try > 0 ? sms->sms.resend_try + 1 : 1);
+           time(&sms->sms.resend_time);
+       }
+       gwlist_produce(outgoing_sms, sms);
+       break;
+       
+    case SMSCCONN_FAILED_SHUTDOWN:
+        gwlist_produce(outgoing_sms, sms);
+        break;
+
     default:
 	/* write NACK to store file */
         store_save_ack(sms, ack_failed);
@@ -284,7 +323,9 @@ void bb_smscconn_send_failed(SMSCConn *conn, Msg *sms, int reason, Octstr *reply
                 bb_smscconn_receive(conn, dlrmsg);
             }
         }
-	msg_destroy(sms);
+
+        msg_destroy(sms);
+        break;
     }
 
     octstr_destroy(reply);
@@ -315,7 +356,7 @@ long bb_smscconn_receive(SMSCConn *conn, Msg *sms)
         return SMSCCONN_FAILED_REJECTED;
     }
 
-    if (white_list_regex && (gw_regex_matches(white_list_regex, sms->sms.sender) == NO_MATCH)) {
+    if (white_list_regex && gw_regex_match_pre(white_list_regex, sms->sms.sender) == 0) {
         info(0, "Number <%s> is not in white-list, message discarded",
              octstr_get_cstr(sms->sms.sender));
         bb_alog_sms(conn, sms, "REJECTED - not white-regex-listed SMS");
@@ -332,7 +373,7 @@ long bb_smscconn_receive(SMSCConn *conn, Msg *sms)
 	return SMSCCONN_FAILED_REJECTED;
     }
 
-    if (black_list_regex && (gw_regex_matches(black_list_regex, sms->sms.sender) == NO_MATCH)) {
+    if (black_list_regex && gw_regex_match_pre(black_list_regex, sms->sms.sender) == 0) {
         info(0, "Number <%s> is not in black-list, message discarded",
              octstr_get_cstr(sms->sms.sender));
         bb_alog_sms(conn, sms, "REJECTED - black-regex-listed SMS");
@@ -407,33 +448,46 @@ static void sms_router(void *arg)
     Msg *msg, *newmsg, *startmsg;
     int ret;
     
-    list_add_producer(flow_threads);
+    gwlist_add_producer(flow_threads);
     gwthread_wakeup(MAIN_THREAD_ID);
 
     newmsg = startmsg = NULL;
     ret = 0;
     
     while(bb_status != BB_DEAD) {
-
 	if (newmsg == startmsg) {
-	    if (ret != 1) {
-		debug("bb.sms", 0, "sms_router: time to sleep"); 
-		gwthread_sleep(600.0);	/* hopefully someone wakes us up */
-		debug("bb.sms", 0, "sms_router: list_len = %ld",
-		      list_len(outgoing_sms));
-	    }
-	    startmsg = list_consume(outgoing_sms);
-	    newmsg = NULL;
-	    msg = startmsg;
-	} else {
-	    newmsg = list_consume(outgoing_sms);
-	    msg = newmsg;
-	}
-	/* debug("bb.sms", 0, "sms_router: handling message (%p vs %p)",
-	 *         newmsg, startmsg); */
-	
-	if (msg == NULL)
+            if (ret != 1) {
+                /*
+                 * In order to reduce amount of msgs to send we sleep only the half of frequency time
+                 * but at least 1 second.
+                 */
+                double sleep_time = (sms_resend_frequency / 2 > 1 ? sms_resend_frequency / 2 : sms_resend_frequency);
+                debug("bb.sms", 0, "sms_router: time to sleep %.2f secs.", sleep_time);
+                gwthread_sleep(sleep_time);
+                debug("bb.sms", 0, "sms_router: gwlist_len = %ld", gwlist_len(outgoing_sms));
+            }
+            startmsg = msg = gwlist_consume(outgoing_sms);
+            newmsg = NULL;
+        }
+        else {
+            newmsg = msg = gwlist_consume(outgoing_sms);
+        }
+
+        /* shutdown ? */
+        if (msg == NULL)
             break;
+
+        debug("bb.sms", 0, "sms_router: handling message (%p vs %p)",
+                  msg, startmsg);
+
+        /* handle delayed msgs */
+        if (msg->sms.resend_try > 0 && difftime(time(NULL), msg->sms.resend_time) < sms_resend_frequency &&
+            bb_status != BB_SHUTDOWN && bb_status != BB_DEAD) {
+            debug("bb.sms", 0, "re-queing SMS not-yet-to-be resent");
+            gwlist_produce(outgoing_sms, msg);
+            ret = 0;
+            continue;
+        }
 
 	ret = smsc2_rout(msg);
 	if (ret == -1) {
@@ -443,14 +497,12 @@ static void sms_router(void *arg)
         } else if (ret == 1) {
 	    newmsg = startmsg = NULL;
 	}
-
-
     }
     /* router has died, make sure that rest die, too */
 
     smsc_running = 0;
 
-    list_remove_producer(flow_threads);
+    gwlist_remove_producer(flow_threads);
 }
 
 
@@ -473,7 +525,7 @@ int smsc2_start(Cfg *cfg)
     /* create split sms counter */
     split_msg_counter = counter_create();
     
-    smsc_list = list_create();
+    smsc_list = gwlist_create();
     gw_rwlock_init_static(&smsc_list_lock);
 
     grp = cfg_get_single_group(cfg, octstr_imm("core"));
@@ -502,30 +554,43 @@ int smsc2_start(Cfg *cfg)
         octstr_destroy(os);
     }
 
+    if (cfg_get_integer(&sms_resend_frequency, grp,
+            octstr_imm("sms-resend-freq")) == -1 || sms_resend_frequency <= 0) {
+        sms_resend_frequency = 60;
+    }
+    info(0, "Set SMS resend frequency to %ld seconds.", sms_resend_frequency);
+            
+    if (cfg_get_integer(&sms_resend_retry, grp, octstr_imm("sms-resend-retry")) == -1) {
+        sms_resend_retry = -1;
+        info(0, "SMS resend retry set to unlimited.");
+    }
+    else
+        info(0, "SMS resend retry set to %ld.", sms_resend_retry);
+
     smsc_groups = cfg_get_multi_group(cfg, octstr_imm("smsc"));
     /*
-    while(groups && (grp = list_extract_first(groups)) != NULL) {
+    while(groups && (grp = gwlist_extract_first(groups)) != NULL) {
         conn = smscconn_create(grp, 1); 
         if (conn == NULL)
             panic(0, "Cannot start with SMSC connection failing");
         
-        list_append(smsc_list, conn);
+        gwlist_append(smsc_list, conn);
     }
     */
-    list_add_producer(smsc_list);
-    for (i = 0; i < list_len(smsc_groups) && 
-        (grp = list_get(smsc_groups, i)) != NULL; i++) {
+    gwlist_add_producer(smsc_list);
+    for (i = 0; i < gwlist_len(smsc_groups) && 
+        (grp = gwlist_get(smsc_groups, i)) != NULL; i++) {
         conn = smscconn_create(grp, 1); 
         if (conn == NULL)
             panic(0, "Cannot start with SMSC connection failing");
-        list_append(smsc_list, conn);
+        gwlist_append(smsc_list, conn);
     }
-    list_remove_producer(smsc_list);
+    gwlist_remove_producer(smsc_list);
     
     if ((router_thread = gwthread_create(sms_router, NULL)) == -1)
 	panic(0, "Failed to start a new thread for SMS routing");
     
-    list_add_producer(incoming_sms);
+    gwlist_add_producer(incoming_sms);
     smsc_running = 1;
     return 0;
 }
@@ -539,16 +604,16 @@ static long smsc2_find(Octstr *id, long start)
     SMSCConn *conn = NULL;
     long i;
 
-    if (start > list_len(smsc_list) || start < 0)
+    if (start > gwlist_len(smsc_list) || start < 0)
         return -1;
 
-    for (i = start; i < list_len(smsc_list); i++) {
-        conn = list_get(smsc_list, i);
+    for (i = start; i < gwlist_len(smsc_list); i++) {
+        conn = gwlist_get(smsc_list, i);
         if (conn != NULL && octstr_compare(conn->id, id) == 0) {
             break;
         }
     }
-    if (i >= list_len(smsc_list))
+    if (i >= gwlist_len(smsc_list))
         i = -1;
     return i;
 }
@@ -564,7 +629,7 @@ int smsc2_stop_smsc(Octstr *id)
     gw_rwlock_rdlock(&smsc_list_lock);
     /* find the specific smsc via id */
     while((i = smsc2_find(id, ++i)) != -1) {
-        conn = list_get(smsc_list, i);
+        conn = gwlist_get(smsc_list, i);
         if (conn != NULL && smscconn_status(conn) == SMSCCONN_DEAD) {
             info(0, "HTTP: Could not shutdown already dead smsc-id `%s'",
                 octstr_get_cstr(id));
@@ -594,7 +659,7 @@ int smsc2_restart_smsc(Octstr *id)
         int hit;
         long group_index;
         /* check if smsc has online status already */
-        conn = list_get(smsc_list, i);
+        conn = gwlist_get(smsc_list, i);
         if (conn != NULL && smscconn_status(conn) != SMSCCONN_DEAD) {
             warning(0, "HTTP: Could not re-start already running smsc-id `%s'",
                 octstr_get_cstr(id));
@@ -603,8 +668,8 @@ int smsc2_restart_smsc(Octstr *id)
         /* find the group with equal smsc id */
         hit = 0;
         grp = NULL;
-        for (group_index = 0; group_index < list_len(smsc_groups) && 
-             (grp = list_get(smsc_groups, group_index)) != NULL; group_index++) {
+        for (group_index = 0; group_index < gwlist_len(smsc_groups) && 
+             (grp = gwlist_get(smsc_groups, group_index)) != NULL; group_index++) {
             smscid = cfg_get(grp, octstr_imm("smsc-id"));
             if (smscid != NULL && octstr_compare(smscid, id) == 0) {
                 if (hit == num)
@@ -631,10 +696,10 @@ int smsc2_restart_smsc(Octstr *id)
         }
         
         /* drop old connection from the active smsc list */
-        list_delete(smsc_list, i, 1);
+        gwlist_delete(smsc_list, i, 1);
         /* destroy the connection */
         smscconn_destroy(conn);
-        list_insert(smsc_list, i, new_conn);
+        gwlist_insert(smsc_list, i, new_conn);
         smscconn_start(new_conn);
         num++;
     }
@@ -656,8 +721,8 @@ void smsc2_resume(void)
         return;
 
     gw_rwlock_rdlock(&smsc_list_lock);
-    for (i = 0; i < list_len(smsc_list); i++) {
-        conn = list_get(smsc_list, i);
+    for (i = 0; i < gwlist_len(smsc_list); i++) {
+        conn = gwlist_get(smsc_list, i);
         smscconn_start(conn);
     }
     gw_rwlock_unlock(&smsc_list_lock);
@@ -676,8 +741,8 @@ void smsc2_suspend(void)
         return;
 
     gw_rwlock_rdlock(&smsc_list_lock);
-    for (i = 0; i < list_len(smsc_list); i++) {
-        conn = list_get(smsc_list, i);
+    for (i = 0; i < gwlist_len(smsc_list); i++) {
+        conn = gwlist_get(smsc_list, i);
         smscconn_stop(conn);
     }
     gw_rwlock_unlock(&smsc_list_lock);
@@ -696,8 +761,8 @@ int smsc2_shutdown(void)
      * handle that they quit, by emptying queues and then dying off
      */
     gw_rwlock_rdlock(&smsc_list_lock);
-    for(i=0; i < list_len(smsc_list); i++) {
-        conn = list_get(smsc_list, i);
+    for(i=0; i < gwlist_len(smsc_list); i++) {
+        conn = gwlist_get(smsc_list, i);
 	smscconn_shutdown(conn, 1);
     }
     gw_rwlock_unlock(&smsc_list_lock);
@@ -710,7 +775,7 @@ int smsc2_shutdown(void)
      * receive thingies? Is this guaranteed by setting bb_status
      * to shutdown before calling these?
      */
-    list_remove_producer(incoming_sms);
+    gwlist_remove_producer(incoming_sms);
     return 0;
 }
 
@@ -726,14 +791,14 @@ void smsc2_cleanup(void)
     debug("smscconn", 0, "final clean-up for SMSCConn");
     
     gw_rwlock_wrlock(&smsc_list_lock);
-    for (i = 0; i < list_len(smsc_list); i++) {
-        conn = list_get(smsc_list, i);
+    for (i = 0; i < gwlist_len(smsc_list); i++) {
+        conn = gwlist_get(smsc_list, i);
         smscconn_destroy(conn);
     }
-    list_destroy(smsc_list, NULL);
+    gwlist_destroy(smsc_list, NULL);
     smsc_list = NULL;
     gw_rwlock_unlock(&smsc_list_lock);
-    list_destroy(smsc_groups, NULL);
+    gwlist_destroy(smsc_groups, NULL);
     octstr_destroy(unified_prefix);    
     numhash_destroy(white_list);
     numhash_destroy(black_list);
@@ -776,11 +841,11 @@ Octstr *smsc2_status(int status_type)
     if (status_type != BBSTATUS_XML)
         tmp = octstr_format("%sSMSC connections:%s", para ? "<p>" : "", lb);
     else
-        tmp = octstr_format("<smscs><count>%d</count>\n\t", list_len(smsc_list));
+        tmp = octstr_format("<smscs><count>%d</count>\n\t", gwlist_len(smsc_list));
 
     gw_rwlock_rdlock(&smsc_list_lock);
-    for (i = 0; i < list_len(smsc_list); i++) {
-        conn = list_get(smsc_list, i);
+    for (i = 0; i < gwlist_len(smsc_list); i++) {
+        conn = gwlist_get(smsc_list, i);
 
         if ((smscconn_info(conn, &info) == -1)) {
             /* 
@@ -890,19 +955,19 @@ int smsc2_rout(Msg *msg)
      * start - from random SMSCConn, as they are all 'equal'
      */
     gw_rwlock_rdlock(&smsc_list_lock);
-    if (list_len(smsc_list) == 0) {
+    if (gwlist_len(smsc_list) == 0) {
 	warning(0, "No SMSCes to receive message");
         gw_rwlock_unlock(&smsc_list_lock);
-	return SMSCCONN_FAILED_DISCARDED;
+	return -1;
     }
 
-    s = gw_rand() % list_len(smsc_list);
+    s = gw_rand() % gwlist_len(smsc_list);
     best_preferred = best_ok = NULL;
     bad_found = 0;
     
     conn = NULL;
-    for (i=0; i < list_len(smsc_list); i++) {
-	conn = list_get(smsc_list,  (i+s) % list_len(smsc_list));
+    for (i=0; i < gwlist_len(smsc_list); i++) {
+	conn = gwlist_get(smsc_list,  (i+s) % gwlist_len(smsc_list));
 
 	ret = smscconn_usable(conn,msg);
 	if (ret == -1)
@@ -937,7 +1002,7 @@ int smsc2_rout(Msg *msg)
 	ret = smscconn_send(best_ok, msg);
     else if (bad_found) {
 	if (bb_status != BB_SHUTDOWN)
-	    list_produce(outgoing_sms, msg);
+	    gwlist_produce(outgoing_sms, msg);
         gw_rwlock_unlock(&smsc_list_lock);
 	return 0;
     }

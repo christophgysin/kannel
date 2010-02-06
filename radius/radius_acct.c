@@ -1,7 +1,7 @@
 /* ==================================================================== 
  * The Kannel Software License, Version 1.0 
  * 
- * Copyright (c) 2001-2004 Kannel Group  
+ * Copyright (c) 2001-2005 Kannel Group  
  * Copyright (c) 1998-2001 WapIT Ltd.   
  * All rights reserved. 
  * 
@@ -55,10 +55,10 @@
  */ 
 
 /*
-* radius_acct.c - RADIUS accounting proxy thread
-*
-* Stipe Tolj <tolj@wapme-systems.de>
-*/
+ * radius_acct.c - RADIUS accounting proxy thread
+ *
+ * Stipe Tolj <stolj@kannel.org>
+ */
 
 #include <string.h>
 #include <fcntl.h>
@@ -94,6 +94,9 @@ static Octstr *secret_radius = NULL;
 
 /* the global unified-prefix list */
 static Octstr *unified_prefix = NULL;
+
+/* timeout in msec for the remote RADIUS responses */
+static long remote_timeout = 40000;
 
 /*************************************************************************
  *
@@ -220,9 +223,12 @@ static void proxy_thread(void *arg)
     run_thread = 1;
     ss = cs = -1;
 
-    /* create client binding, only if we have a remote server */
+    /* create client binding, only if we have a remote server
+     * and make the client socet non-blocking */
     if (remote_host != NULL) {
         cs = udp_client_socket();
+        fl = fcntl(cs, F_GETFL);
+        fcntl(cs, F_SETFL, fl | O_NONBLOCK);
         addr = udp_create_address(remote_host, remote_port);
     }
 
@@ -241,6 +247,9 @@ static void proxy_thread(void *arg)
         Octstr *data, *rdata;
         Octstr *from_nas, *from_radius;
 
+        pdu = r = NULL;
+        data = rdata = from_nas = from_radius = NULL;
+        
         if (read_available(ss, 100000) < 1)
             continue;
 
@@ -254,7 +263,6 @@ static void proxy_thread(void *arg)
             continue;
         }
 
-
         tmp = udp_get_ip(from_nas);
         info(0, "RADIUS: Got data from NAS <%s:%d>",
              octstr_get_cstr(tmp), udp_get_port(from_nas));
@@ -262,11 +270,17 @@ static void proxy_thread(void *arg)
         octstr_dump(data, 0);
 
         /* unpacking the RADIUS PDU */
-        pdu = radius_pdu_unpack(data);
-        info(0, "RADIUS PDU type: %s", pdu->type_name);
+        if ((pdu = radius_pdu_unpack(data)) == NULL) {
+            warning(0, "RADIUS: Couldn't unpack PDU from NAS, ignoring.");
+            goto error;
+        }
+        info(0, "RADIUS: from NAS: PDU type: %s", pdu->type_name);
 
-        /* FIXME: XXX authenticator md5 check does not work?! */
-        //radius_authenticate_pdu(pdu, data, secret_nas);
+        /* authenticate the Accounting-Request packet */
+        if (radius_authenticate_pdu(pdu, &data, secret_nas) == 0) {
+            warning(0, "RADIUS: Authentication failed for PDU from NAS, ignoring.");
+            goto error;
+        }
 
         /* store to hash table if not present yet */
         mutex_lock(radius_mutex);
@@ -298,11 +312,16 @@ static void proxy_thread(void *arg)
             if (udp_sendto(cs, data, addr) == -1) {
                 error(0, "RADIUS: Couldn't send to remote RADIUS <%s:%ld>.",
                       octstr_get_cstr(remote_host), remote_port);
-            } else if (udp_recvfrom(cs, &data, &from_radius) == -1) {
+            } else 
+            if (read_available(cs, remote_timeout) < 1) {
+                error(0, "RADIUS: Timeout for response from remote RADIUS <%s:%ld>.",
+                      octstr_get_cstr(remote_host), remote_port);
+            } else 
+            if (udp_recvfrom(cs, &data, &from_radius) == -1) {
                 error(0, "RADIUS: Couldn't receive from remote RADIUS <%s:%ld>.",
                       octstr_get_cstr(remote_host), remote_port);
             } else {
-                info(0, "RADIUS: Got data from remote RADIUS <%s:%d>",
+                info(0, "RADIUS: Got data from remote RADIUS <%s:%d>.",
                      octstr_get_cstr(udp_get_ip(from_radius)), udp_get_port(from_radius));
                 octstr_dump(data, 0);
 
@@ -316,6 +335,7 @@ static void proxy_thread(void *arg)
             error(0, "RADIUS: Couldn't send response data to NAS <%s:%d>.",
                   octstr_get_cstr(udp_get_ip(from_nas)), udp_get_port(from_nas));
 
+error:
         radius_pdu_destroy(pdu);
         radius_pdu_destroy(r);
 
@@ -376,6 +396,7 @@ void radius_acct_init(CfgGroup *grp)
         }
     }
     cfg_get_integer(&our_port, grp, octstr_imm("our-port"));
+    cfg_get_integer(&remote_timeout, grp, octstr_imm("remote-timeout"));
 
     if ((cfg_get_integer(&nas_ports, grp, octstr_imm("nas-ports"))) == -1) {
         nas_ports = RADIUS_NAS_PORTS;

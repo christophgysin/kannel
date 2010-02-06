@@ -1,7 +1,7 @@
 /* ==================================================================== 
  * The Kannel Software License, Version 1.0 
  * 
- * Copyright (c) 2001-2004 Kannel Group  
+ * Copyright (c) 2001-2005 Kannel Group  
  * Copyright (c) 1998-2001 WapIT Ltd.   
  * All rights reserved. 
  * 
@@ -90,9 +90,9 @@ void parse_context_destroy(ParseContext *context)
     gw_assert(context != NULL);
 
     if (context->limit_stack) {
-        while (list_len(context->limit_stack) > 0)
-            gw_free(list_extract_first(context->limit_stack));
-        list_destroy(context->limit_stack, NULL);
+        while (gwlist_len(context->limit_stack) > 0)
+            gw_free(gwlist_extract_first(context->limit_stack));
+        gwlist_destroy(context->limit_stack, NULL);
     }
     gw_free(context);
 }
@@ -130,11 +130,11 @@ int parse_limit(ParseContext *context, long length)
     }
 
     if (context->limit_stack == NULL)
-        context->limit_stack = list_create();
+        context->limit_stack = gwlist_create();
 
     elem = gw_malloc(sizeof(*elem));
     *elem = context->limit;
-    list_insert(context->limit_stack, 0, elem);
+    gwlist_insert(context->limit_stack, 0, elem);
     context->limit = context->pos + length;
     return 0;
 }
@@ -145,12 +145,12 @@ int parse_pop_limit(ParseContext *context)
 
     gw_assert(context != NULL);
 
-    if (context->limit_stack == NULL || list_len(context->limit_stack) == 0) {
+    if (context->limit_stack == NULL || gwlist_len(context->limit_stack) == 0) {
         context->error = 1;
         return -1;
     }
 
-    elem = list_extract_first(context->limit_stack);
+    elem = gwlist_extract_first(context->limit_stack);
     context->limit = *elem;
     gw_free(elem);
     return 0;

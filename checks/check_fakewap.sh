@@ -5,9 +5,10 @@
 set -e
 #set -x
 
+host=127.0.0.1
 times=10
 port=8040
-url="http://localhost:$port/hello.wml"
+url="http://$host:$port/hello.wml"
 loglevel=0
 
 test/test_http_server -f test/hello.wml -p $port > check_http.log 2>&1 &
@@ -25,10 +26,10 @@ wappid=$!
 
 sleep 2
 
-test/fakewap -m $times $url > check_fake.log 2>&1
+test/fakewap -g $host -m $times $url > check_fake.log 2>&1
 ret=$?
 
-test/test_http -qv 4 http://localhost:$port/quit
+test/test_http -qv 4 http://$host:$port/quit
 kill -INT $bbpid 
 wait
 
