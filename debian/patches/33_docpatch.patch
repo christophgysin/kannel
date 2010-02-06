@@ -1,10 +1,6 @@
-#! /bin/sh /usr/share/dpatch/dpatch-run
-## 33_docpatch.dpatch by Paul Dwerryhouse <paul@dwerryhouse.com.au>
-##
-## All lines beginning with `## DP:' are a description of the patch.
-## DP: Puts correct url to local docs in man pages
-
-@DPATCH@
+Description: Puts correct url to local docs in man pages
+Author: Paul Dwerryhouse <paul@dwerryhouse.com.au>
+Last-Update: 2010-02-06
 diff -urN kannel-1.4.1.old/gw/kannel.8 kannel-1.4.1/gw/kannel.8
 --- kannel-1.4.1.old/gw/kannel.8	2000-10-04 01:04:26.000000000 +1100
 +++ kannel-1.4.1/gw/kannel.8	2009-01-11 11:07:46.000000000 +1100

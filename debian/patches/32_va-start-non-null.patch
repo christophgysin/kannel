@@ -1,10 +1,6 @@
-#! /bin/sh /usr/share/dpatch/dpatch-run
-## 32_va-start-non-null.dpatch by Loic Minier <Loic Minier <lool@dooz.org>>
-##
-## All lines beginning with `## DP:' are a description of the patch.
-## DP: Compilation fix for the alpha architecture where va_list is a struct
-
-@DPATCH@
+Description: Compilation fix for the alpha architecture where va_list is a struct
+Author: Loic Minier <Loic Minier <lool@dooz.org>
+Last-Update: 2010-02-06
 diff -urNad kannel-1.4.0~/gwlib/log.c kannel-1.4.0/gwlib/log.c
 --- kannel-1.4.0~/gwlib/log.c	2004-08-08 23:46:51.000000000 +0200
 +++ kannel-1.4.0/gwlib/log.c	2005-10-16 14:53:51.000000000 +0200
