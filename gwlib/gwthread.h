@@ -1,7 +1,7 @@
 /* ==================================================================== 
  * The Kannel Software License, Version 1.0 
  * 
- * Copyright (c) 2001-2005 Kannel Group  
+ * Copyright (c) 2001-2009 Kannel Group  
  * Copyright (c) 1998-2001 WapIT Ltd.   
  * All rights reserved. 
  * 
@@ -141,6 +141,10 @@ int gwthread_poll(struct pollfd *fds, long numfds, double timeout);
 /* Sleep until "seconds" seconds have elapsed, or until another thread
  * calls gwthread_wakeup on us.  Fractional seconds are allowed. */
 void gwthread_sleep(double seconds);
+
+/* Sleep until "seconds" seconds have elapsed, or until another thread
+ * calls gwthread_wakeup on us.  Fractional seconds are allowed. */
+void gwthread_sleep_micro(double dseconds);
 
 /* Force a specific thread to terminate. Returns 0 on success, -1 if the
  * thread has been terminated while calling and non-zero for the pthread

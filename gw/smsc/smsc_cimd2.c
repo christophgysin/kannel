@@ -1,7 +1,7 @@
 /* ==================================================================== 
  * The Kannel Software License, Version 1.0 
  * 
- * Copyright (c) 2001-2005 Kannel Group  
+ * Copyright (c) 2001-2009 Kannel Group  
  * Copyright (c) 1998-2001 WapIT Ltd.   
  * All rights reserved. 
  * 
@@ -209,7 +209,7 @@ enum { P_INT, P_STRING, P_ADDRESS, P_TIME, P_HEX, P_SMS };
  * outgoing messages. */
 static const struct
 {
-    unsigned char *name;
+    char *name;
     int number;
     int maxlen;
     int type;  /* P_ values */
@@ -257,7 +257,7 @@ parameters[] = {
 
 /* Return the index in the parameters array for this parameter id.
  * Return -1 if it is not found. */
-static const int parm_index(int parmno)
+static int parm_index(int parmno)
 {
     int i;
 
@@ -271,7 +271,7 @@ static const int parm_index(int parmno)
 
 #ifndef NO_GWASSERT
 /* Return the type of this parameter id.  Return -1 if the id is unknown. */
-static const int parm_type(int parmno)
+static int parm_type(int parmno)
 {
     int i = parm_index(parmno);
 
@@ -284,7 +284,7 @@ static const int parm_type(int parmno)
 
 /* Return the max length for this parameter id.
  * Return -1 if the id is unknown. */
-static const int parm_maxlen(int parmno)
+static int parm_maxlen(int parmno)
 {
     int i = parm_index(parmno);
 
@@ -307,7 +307,7 @@ static const char *parm_name(int parmno)
 #ifndef NO_GWASSERT
 /* Return 1 if the value for this (Integer) parameter is in range.
  * Return 0 otherwise.  Return -1 if the parameter was not found.  */
-static const int parm_in_range(int parmno, long value)
+static int parm_in_range(int parmno, long value)
 {
     int i;
 
@@ -326,7 +326,7 @@ static int isphonedigit(int c)
     return isdigit(c) || c == '+' || c == '-';
 }
 
-static const int parm_valid_address(Octstr *value)
+static int parm_valid_address(Octstr *value)
 {
     return octstr_check_range(value, 0, octstr_len(value), isphonedigit);
 }
@@ -337,12 +337,12 @@ static const int parm_valid_address(Octstr *value)
 
 static int operation_find(int operation);
 static Octstr *operation_name(int operation);
-static const int operation_can_send(int operation);
-static const int operation_can_receive(int operation);
+static int operation_can_send(int operation);
+static int operation_can_receive(int operation);
 
 static const struct
 {
-    unsigned char *name;
+    char *name;
     int code;
     int can_send;
     int can_receive;
@@ -403,7 +403,7 @@ static Octstr *operation_name(int operation)
 }
 
 /* Return true if a CIMD2 client may send this operation */
-static const int operation_can_send(int operation)
+static int operation_can_send(int operation)
 {
     int i = operation_find(operation);
 
@@ -419,7 +419,7 @@ static const int operation_can_send(int operation)
 
 
 /* Return true if a CIMD2 server may send this operation */
-static const int operation_can_receive(int operation)
+static int operation_can_receive(int operation)
 {
     int i = operation_find(operation);
 
@@ -919,7 +919,7 @@ static void packet_check_can_receive(struct packet *packet, SMSCConn *conn)
 static struct
 {
     int code;
-    unsigned char *text;
+    char *text;
 }
 cimd2_errors[] = {
     { 0, "No error" },
@@ -1177,7 +1177,7 @@ static void convert_gsm_to_cimd2(Octstr *text)
 static struct packet *packet_create(int operation, int seq)
 {
     struct packet *packet;
-    unsigned char minpacket[sizeof("sOO:SSSte")];
+    char minpacket[sizeof("sOO:SSSte")];
 
     packet = gw_malloc(sizeof(*packet));
     packet->operation = operation;
@@ -1192,7 +1192,7 @@ static struct packet *packet_create(int operation, int seq)
 static void packet_add_parm(struct packet *packet, int parmtype,
                             int parmno, Octstr *value, SMSCConn *conn)
 {
-    unsigned char parmh[sizeof("tPPP:")];
+    char parmh[sizeof("tPPP:")];
     long position;
     long len;
     int copied = 0;
@@ -1261,7 +1261,7 @@ static void packet_add_hex_parm(struct packet *packet, int parmno, Octstr *value
 /* Add an Integer parameter to the packet */
 static void packet_add_int_parm(struct packet *packet, int parmno, long value, SMSCConn *conn)
 {
-    unsigned char buf[128];
+    char buf[128];
     Octstr *valuestr;
 
     gw_assert(parm_in_range(parmno, value));
@@ -1277,7 +1277,7 @@ static void packet_set_checksum(struct packet *packet)
     Octstr *data;
     int checksum;
     long pos, len;
-    unsigned char buf[16];
+    char buf[16];
 
     gw_assert(packet != NULL);
 
@@ -1302,7 +1302,7 @@ static void packet_set_checksum(struct packet *packet)
 
 static void packet_set_sequence(struct packet *packet, int seq)
 {
-    unsigned char buf[16];
+    char buf[16];
 
     gw_assert(packet != NULL);
     gw_assert(seq >= 0);
@@ -1484,7 +1484,7 @@ static struct packet *packet_encode_message(Msg *msg, Octstr *sender_prefix, SMS
         /* Going from latin1 to GSM to CIMD2 may seem like a
          * detour, but it's the only way to get all the escape
          * codes right. */
-        charset_latin1_to_gsm(text);
+        charset_utf8_to_gsm(text);
         truncated = charset_gsm_truncate(text, spaceleft);
         convert_gsm_to_cimd2(text);
         packet_add_sms_parm(packet, P_USER_DATA, text, conn);
@@ -1613,7 +1613,7 @@ static Msg *cimd2_accept_message(struct packet *request, SMSCConn *conn)
     text = packet_get_sms_parm(request, P_USER_DATA);
     if (text != NULL) {
         convert_cimd2_to_gsm(text,conn);
-        charset_gsm_to_latin1(text);
+        charset_gsm_to_utf8(text);
     } else {
         /*
          * FIXME: If DCS indicates GSM charset, and we get it in binary,

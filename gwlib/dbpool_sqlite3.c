@@ -1,7 +1,7 @@
 /* ==================================================================== 
  * The Kannel Software License, Version 1.0 
  * 
- * Copyright (c) 2001-2005 Kannel Group  
+ * Copyright (c) 2001-2009 Kannel Group  
  * Copyright (c) 1998-2001 WapIT Ltd.   
  * All rights reserved. 
  * 
@@ -67,7 +67,6 @@ static void *sqlite3_open_conn(const DBConf *db_conf)
 {
     sqlite3 *db = NULL;
     SQLite3Conf *conf = db_conf->sqlite3; /* make compiler happy */
-    char *errmsg = 0;
 
     /* sanity check */
     if (conf == NULL)
@@ -79,6 +78,10 @@ static void *sqlite3_open_conn(const DBConf *db_conf)
         error(0, "SQLite3: %s", sqlite3_errmsg(db));
         sqlite3_close(db);
         goto failed;
+    }
+    if (conf->lock_timeout > 0) {
+    	info(0, "SQLite3: Setting lock timeout to %ld", conf->lock_timeout);
+    	sqlite3_busy_timeout(db, conf->lock_timeout);
     }
 
     info(0, "SQLite3: Opened or created database file `%s'.", octstr_get_cstr(conf->file));
@@ -100,13 +103,11 @@ static void sqlite3_close_conn(void *conn)
     /* in case we are busy, loop until we can close */
     do {
         rc = sqlite3_close((sqlite3*) conn);
-    } while (rc != SQLITE_BUSY);
+    } while (rc == SQLITE_BUSY);
     
     if (rc == SQLITE_ERROR) {
         error(0, "SQLite3: error while closing database file.");
     }
-    
-    gw_free(conn);
 }
 
 

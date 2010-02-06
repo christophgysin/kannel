@@ -1,7 +1,7 @@
 /* ==================================================================== 
  * The Kannel Software License, Version 1.0 
  * 
- * Copyright (c) 2001-2005 Kannel Group  
+ * Copyright (c) 2001-2009 Kannel Group  
  * Copyright (c) 1998-2001 WapIT Ltd.   
  * All rights reserved. 
  * 
@@ -477,7 +477,7 @@ static int set_anys(WAPEvent **e, long type_of_address, int is_any)
 }
 
 /*
- * We actually use address_type field of a wap event for cotrolling the bearer
+ * We actually use address_type field of a wap event for controlling the bearer
  * selection. Bearer and network filed are used for debugging purposes.
  */
 static void set_defaults(WAPEvent **e, long type_of_address)
@@ -796,7 +796,7 @@ static int parse_element(xmlNodePtr node, WAPEvent **e, long *type_of_address,
     size_t i;
     int ret;
 
-    name = octstr_create(node->name);
+    name = octstr_create((char *)node->name);
     if (octstr_len(name) == 0) {
         octstr_destroy(name);
         debug("wap.push.pap.compiler", 0, "PAP COMPILER: element name length"
@@ -860,10 +860,10 @@ static int parse_attribute(Octstr *element_name, xmlAttrPtr attribute,
     int ret;
 
     nameos = octstr_imm("erroneous");
-    attr_name = octstr_create(attribute->name);
+    attr_name = octstr_create((char *)attribute->name);
 
     if (attribute->children != NULL)
-        value = create_octstr_from_node(attribute->children);
+        value = create_octstr_from_node((char *)attribute->children);
     else
         value = octstr_imm("erroneous");
 

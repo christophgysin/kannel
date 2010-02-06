@@ -1,7 +1,7 @@
 /* ==================================================================== 
  * The Kannel Software License, Version 1.0 
  * 
- * Copyright (c) 2001-2005 Kannel Group  
+ * Copyright (c) 2001-2009 Kannel Group  
  * Copyright (c) 1998-2001 WapIT Ltd.   
  * All rights reserved. 
  * 
@@ -383,7 +383,7 @@ Octstr *radius_acct_get_msisdn(Octstr *client_ip)
 
 void radius_acct_init(CfgGroup *grp)
 {
-    unsigned long nas_ports = 0;
+    long nas_ports = 0;
 
     /* get configured parameters */
     if ((our_host = cfg_get(grp, octstr_imm("our-host"))) == NULL) {

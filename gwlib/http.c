@@ -1,7 +1,7 @@
 /* ==================================================================== 
  * The Kannel Software License, Version 1.0 
  * 
- * Copyright (c) 2001-2005 Kannel Group  
+ * Copyright (c) 2001-2009 Kannel Group  
  * Copyright (c) 1998-2001 WapIT Ltd.   
  * All rights reserved. 
  * 
@@ -88,7 +88,7 @@
 #define DUMP_RESPONSE 1
 
 /* define http client connections timeout in seconds (set to -1 for disable) */
-#define HTTP_CLIENT_TIMEOUT 240
+static int http_client_timeout = 240;
 
 /* define http server connections timeout in seconds (set to -1 for disable) */
 #define HTTP_SERVER_TIMEOUT 60
@@ -197,6 +197,7 @@ static int parse_http_version(Octstr *version)
 static Mutex *proxy_mutex = NULL;
 static Octstr *proxy_hostname = NULL;
 static int proxy_port = 0;
+static int proxy_ssl = 0;
 static Octstr *proxy_username = NULL;
 static Octstr *proxy_password = NULL;
 static List *proxy_exceptions = NULL;
@@ -262,7 +263,7 @@ static int proxy_used_for_host(Octstr *host, Octstr *url)
 }
 
 
-void http_use_proxy(Octstr *hostname, int port, List *exceptions,
+void http_use_proxy(Octstr *hostname, int port, int ssl, List *exceptions,
     	    	    Octstr *username, Octstr *password, Octstr *exceptions_regex)
 {
     Octstr *e;
@@ -278,11 +279,11 @@ void http_use_proxy(Octstr *hostname, int port, List *exceptions,
 
     proxy_hostname = octstr_duplicate(hostname);
     proxy_port = port;
+    proxy_ssl = ssl;
     proxy_exceptions = gwlist_create();
     for (i = 0; i < gwlist_len(exceptions); ++i) {
         e = gwlist_get(exceptions, i);
-	debug("gwlib.http", 0, "HTTP: Proxy exception `%s'.",
-	      octstr_get_cstr(e));
+        debug("gwlib.http", 0, "HTTP: Proxy exception `%s'.", octstr_get_cstr(e));
         gwlist_append(proxy_exceptions, octstr_duplicate(e));
     }
     if (exceptions_regex != NULL &&
@@ -290,8 +291,9 @@ void http_use_proxy(Octstr *hostname, int port, List *exceptions,
             panic(0, "Could not compile pattern '%s'", octstr_get_cstr(exceptions_regex));
     proxy_username = octstr_duplicate(username);
     proxy_password = octstr_duplicate(password);
-    debug("gwlib.http", 0, "Using proxy <%s:%d>", 
-    	  octstr_get_cstr(proxy_hostname), proxy_port);
+    debug("gwlib.http", 0, "Using proxy <%s:%d> with %s scheme", 
+    	  octstr_get_cstr(proxy_hostname), proxy_port,
+    	  (proxy_ssl ? "HTTPS" : "HTTP"));
 
     mutex_unlock(proxy_mutex);
 }
@@ -768,9 +770,10 @@ static void conn_pool_shutdown(void)
 }
 
 
-static inline Octstr *conn_pool_key(Octstr *host, int port)
+static inline Octstr *conn_pool_key(Octstr *host, int port, int ssl, Octstr *certfile, Octstr *our_host)
 {
-    return octstr_format("%S:%d", host, port);
+    return octstr_format("%S:%d:%d:%S:%S", host, port, ssl?1:0, certfile?certfile:octstr_imm(""),
+                         our_host?our_host:octstr_imm(""));
 }
 
 
@@ -784,7 +787,7 @@ static Connection *conn_pool_get(Octstr *host, int port, int ssl, Octstr *certke
 
     do {
         retry = 0;
-        key = conn_pool_key(host, port);
+        key = conn_pool_key(host, port, ssl, certkeyfile, our_host);
         mutex_lock(conn_pool_lock);
         list = dict_get(conn_pool, key);
         if (list != NULL)
@@ -819,7 +822,7 @@ static Connection *conn_pool_get(Octstr *host, int port, int ssl, Octstr *certke
     if (conn == NULL) {
 #ifdef HAVE_LIBSSL
         if (ssl) 
-            conn = conn_open_ssl(host, port, certkeyfile, our_host);
+            conn = conn_open_ssl_nb(host, port, certkeyfile, our_host);
         else
 #endif /* HAVE_LIBSSL */
             conn = conn_open_tcp_nb(host, port, our_host);
@@ -843,12 +846,11 @@ static void check_pool_conn(Connection *conn, void *data)
         return;
     }
     /* check if connection still ok */
-    conn_wait(conn, 0);
     if (conn_error(conn) || conn_eof(conn)) {
         List *list;
         mutex_lock(conn_pool_lock);
         list = dict_get(conn_pool, key);
-        if (list != NULL && gwlist_delete_equal(list, conn) > 0) {
+        if (gwlist_delete_equal(list, conn) > 0) {
             /*
              * ok, connection was still within pool. So it's
              * safe to destroy this connection.
@@ -869,12 +871,12 @@ static void check_pool_conn(Connection *conn, void *data)
 }
 
 
-static void conn_pool_put(Connection *conn, Octstr *host, int port)
+static void conn_pool_put(Connection *conn, Octstr *host, int port, int ssl, Octstr *certfile, Octstr *our_host)
 {
     Octstr *key;
     List *list;
 
-    key = conn_pool_key(host, port);
+    key = conn_pool_key(host, port, ssl, certfile, our_host);
     mutex_lock(conn_pool_lock);
     list = dict_get(conn_pool, key);
     if (list == NULL) {
@@ -1069,17 +1071,34 @@ static void handle_transaction(Connection *conn, void *data)
 
     conn_unregister(trans->conn);
 
+    /* 
+     * Take care of persistent connection handling. 
+     * At this point we have only obeyed if server responds in HTTP/1.0 or 1.1
+     * and have assigned trans->persistent accordingly. This can be keept
+     * for default usage, but if we have [Proxy-]Connection: keep-alive, then
+     * we're still forcing persistancy of the connection.
+     */
     h = http_header_find_first(trans->response->headers, "Connection");
-    if (h != NULL && octstr_compare(h, octstr_imm("close")) == 0)
+    if (h != NULL && octstr_case_compare(h, octstr_imm("close")) == 0)
         trans->persistent = 0;
+    if (h != NULL && octstr_case_compare(h, octstr_imm("keep-alive")) == 0)
+        trans->persistent = 1;
     octstr_destroy(h);
+    if (proxy_used_for_host(trans->host, trans->url)) {
+        h = http_header_find_first(trans->response->headers, "Proxy-Connection");
+        if (h != NULL && octstr_case_compare(h, octstr_imm("close")) == 0)
+            trans->persistent = 0;
+        if (h != NULL && octstr_case_compare(h, octstr_imm("keep-alive")) == 0)
+            trans->persistent = 1;
+        octstr_destroy(h);
+    }
 
 #ifdef USE_KEEPALIVE 
     if (trans->persistent) {
         if (proxy_used_for_host(trans->host, trans->url))
-            conn_pool_put(trans->conn, proxy_hostname, proxy_port);
+            conn_pool_put(trans->conn, proxy_hostname, proxy_port, trans->ssl, trans->certkeyfile, http_interface);
         else 
-            conn_pool_put(trans->conn, trans->host, trans->port);
+            conn_pool_put(trans->conn, trans->host, trans->port, trans->ssl, trans->certkeyfile, http_interface);
     } else
 #endif
         conn_destroy(trans->conn);
@@ -1124,8 +1143,8 @@ static void handle_transaction(Connection *conn, void *data)
         conn_destroy(trans->conn);
         trans->conn = NULL;
 
-        /* re-inject request to queue */
-        gwlist_produce(pending_requests, trans);
+        /* re-inject request to the front of the queue */
+        gwlist_insert(pending_requests, 0, trans);
 
     } else {
         /* handle this response as usual */
@@ -1163,6 +1182,9 @@ static Octstr *build_request(char *method_name, Octstr *path_or_url,
     if (port != HTTP_PORT)
         octstr_format_append(request, ":%ld", port);
     octstr_append(request, octstr_imm("\r\n"));
+#ifdef USE_KEEPALIVE 
+    octstr_append(request, octstr_imm("Connection: keep-alive\r\n"));
+#endif
 
     for (i = 0; headers != NULL && i < gwlist_len(headers); ++i) {
         octstr_append(request, gwlist_get(headers, i));
@@ -1453,8 +1475,8 @@ static Connection *get_connection(HTTPServer *trans)
     Connection *conn = NULL;
     Octstr *host;
     HTTPURLParse *p;
-    int port;
-
+    int port, ssl;
+    
     /* if the parsing has not yet been done, then do it now */
     if (!trans->host && trans->port == 0 && trans->url != NULL) {
         if ((p = parse_url(trans->url)) != NULL) {
@@ -1468,12 +1490,14 @@ static Connection *get_connection(HTTPServer *trans)
     if (proxy_used_for_host(trans->host, trans->url)) {
         host = proxy_hostname;
         port = proxy_port;
+        ssl = proxy_ssl;
     } else {
         host = trans->host;
         port = trans->port;
+        ssl = trans->ssl;
     }
 
-    conn = conn_pool_get(host, port, trans->ssl, trans->certkeyfile,
+    conn = conn_pool_get(host, port, ssl, trans->certkeyfile,
                          http_interface);
     if (conn == NULL)
         goto error;
@@ -1572,6 +1596,8 @@ static void write_request_thread(void *arg)
 
         gw_assert(trans->state == request_not_sent);
 
+        debug("gwlib.http", 0, "Queue contains %ld pending requests.", gwlist_len(pending_requests));
+
         /* 
          * get the connection to use
          * also calls parse_url() to populate the trans values
@@ -1611,7 +1637,7 @@ static void start_client_threads(void)
 	 */
 	mutex_lock(client_thread_lock);
 	if (!client_threads_are_running) {
-	    client_fdset = fdset_create_real(HTTP_CLIENT_TIMEOUT);
+	    client_fdset = fdset_create_real(http_client_timeout);
 	    if (gwthread_create(write_request_thread, NULL) == -1) {
                 error(0, "HTTP: Could not start client write_request thread.");
                 fdset_destroy(client_fdset);
@@ -1628,6 +1654,14 @@ void http_set_interface(const Octstr *our_host)
     http_interface = octstr_duplicate(our_host);
 }
 
+void http_set_client_timeout(long timeout)
+{
+    http_client_timeout = timeout;
+    if (client_fdset != NULL) {
+        /* we are already initialized set timeout in fdset */
+        fdset_set_timeout(client_fdset, http_client_timeout);
+    }
+}
 
 void http_start_request(HTTPCaller *caller, int method, Octstr *url, List *headers,
     	    	    	Octstr *body, int follow, void *id, Octstr *certkeyfile)
@@ -1977,7 +2011,12 @@ static void port_put_request(HTTPClient *client)
     key = port_key(client->port);
     p = dict_get(port_collection, key);
     octstr_destroy(key);
-    gw_assert(p != NULL);
+    if (p == NULL) {
+        /* client was too slow and we closed port already */
+        mutex_unlock(port_mutex);
+        client_destroy(client);
+        return;
+    }
     gwlist_produce(p->clients_with_requests, client);
     mutex_unlock(port_mutex);
 }
@@ -2399,11 +2438,19 @@ HTTPClient *http_accept_request(int port, Octstr **client_ip, Octstr **url,
 {
     HTTPClient *client;
 
-    client = port_get_request(port);
-    if (client == NULL) {
-	debug("gwlib.http", 0, "HTTP: No clients with requests, quitting.");
-    	return NULL;
-    }
+    do {
+        client = port_get_request(port);
+        if (client == NULL) {
+            debug("gwlib.http", 0, "HTTP: No clients with requests, quitting.");
+            return NULL;
+        }
+        /* check whether client connection still ok */
+        conn_wait(client->conn, 0);
+        if (conn_error(client->conn) || conn_eof(client->conn)) {
+            client_destroy(client);
+            client = NULL;
+        }
+    } while(client == NULL);
 
     *client_ip = octstr_duplicate(client->ip);
     *url = client->url;
@@ -2486,6 +2533,7 @@ void http_send_reply(HTTPClient *client, int status, List *headers,
     	    	     Octstr *body)
 {
     Octstr *response;
+    Octstr *date;
     long i;
     int ret;
 
@@ -2496,7 +2544,12 @@ void http_send_reply(HTTPClient *client, int status, List *headers,
 
     /* identify ourselfs */
     octstr_format_append(response, "Server: " GW_NAME "/%s\r\n", GW_VERSION);
-
+    
+    /* let's inform the client of our time */
+    date = date_format_http(time(NULL));
+    octstr_format_append(response, "Date: %s\r\n", octstr_get_cstr(date));
+    octstr_destroy(date);
+    
     octstr_format_append(response, "Content-Length: %ld\r\n",
 			 octstr_len(body));
 
@@ -3235,6 +3288,20 @@ void http_cgivar_dump(List *cgiargs)
 }
 
 
+void http_cgivar_dump_into(List *cgiargs, Octstr *os)
+{
+    HTTPCGIVar *v;
+
+    if (os == NULL)
+        return;
+
+    gwlib_assert_init();
+
+    while ((v = gwlist_extract_first(cgiargs)) != NULL)
+        octstr_format_append(os, "&%S=%S", v->name, v->value);
+}
+
+
 static int http_something_accepted(List *headers, char *header_name,
                                    char *what)
 {
@@ -3339,7 +3406,7 @@ Octstr *http_get_header_parameter(Octstr *value, Octstr *parameter)
         }
 
         /* is this the pair we look for? bail out then*/
-        if (octstr_compare(key, parameter) == 0) {
+        if (octstr_case_compare(key, parameter) == 0) {
             found++;        
             result = octstr_duplicate(val);
         }

@@ -44,11 +44,11 @@
 		<firstname>Stipe</firstname>
 		<surname>Tolj</surname>
 		<affiliation>
-			<jobtitle>Chief Technology Scientist</jobtitle>
-			<orgname>Wapme Systems AG</orgname>
+			<jobtitle>System Architect</jobtitle>
+			<orgname>Tolj System Architecture</orgname>
 			<address> 
-				<email>stolj@wapme.de</email>
-				<otheraddr>http://www.wapme.de</otheraddr>
+				<email>stolj@kannel.org</email>
+				<otheraddr>http://www.kannel.org</otheraddr>
 			</address>
 		</affiliation>
 	</author>
@@ -68,11 +68,11 @@
 		<firstname>Alexander</firstname>
 		<surname>Malysh</surname>
 		<affiliation>
-			<!-- <jobtitle>Chief Kannel Developer</jobtitle>
-			<orgname>Centrium GmbH</orgname> -->
+			<jobtitle>Developer</jobtitle>
+			<orgname>GTX Ltd.</orgname>
 			<address> 
 				<email>amalysh at kannel.org</email>
-				<!-- <otheraddr>http://www.centrium.de</otheraddr> -->
+				<otheraddr>http://www.gtx-messaging.com</otheraddr>
 			</address>
 		</affiliation>
 	</author>
@@ -166,7 +166,7 @@
 
 	<para>Kannel's quality has been recognized on March 7, 2001 when it
 	was <ulink url="http://www.kannel.org/oldnews.shtml#wapcert">certified</ulink> 
-	by <ulink url="http://www.wapforum.org">Wap Forum</ulink>
+	by <ulink url="http://www.wapforum.org">WAP Forum</ulink>
 	as the first WAP 1.1 gateway in the world.</para>
 
 	<para>Greater quality recognition are the quantity of companies 
@@ -226,7 +226,7 @@
 	content to the phones.</para>
 
         <figure>
-        <title>Logical position of WAP gateway (and PPG)between a phone and a 
+        <title>Logical position of WAP gateway (and PPG) between a phone and a 
         content server.</title>
         <graphic fileref="wap-gateway&figtype;"></graphic>
         </figure>
@@ -428,7 +428,7 @@
 	</itemizedlist>
 	</para>
 	
-	<para>Hardware requirements are fluffier. Some informal benchmarkings 
+	<para>Hardware requirements are fluffier. Some informal benchmarking 
 	have shown that with a reasonably fast PC architecture (e.g. 400MHz 
 	Pentium II with 128MB RAM), SMS performance's bottleneck is always on the
 	SMSC side, even for example with multiple connections summing a pipeline with 
@@ -495,7 +495,7 @@
 	<para>You can also find general information on Kannel's 
 		<ulink url="http://www.kannel.org">website</ulink> and
 		information about existing problems at 
-		<ulink url="http://bugs.kannel.org">our bugtracker</ulink>.
+		<ulink url="http://bugs.kannel.org">our bug tracker</ulink>.
 	</para>
 
 	<para>
@@ -789,7 +789,7 @@
 
 	<para>To run Kannel as a SMS gateway you need to edit the
 	configuration file which is at /etc/kannel/kannel.conf.
-	In kannel's documentation directory 
+	In Kannel's documentation directory 
 	(<filename>/usr/share/doc/kannel</filename>) 
 	there is an example file called examples/smskannel.conf. 
 	It has some basic examples of the configuration groups needed 
@@ -844,7 +844,7 @@
 	</para>
 
 	<para>See http://kannel.org/download.shtml#debian_repository for 
-	informations about kannel repository sources.list</para>
+	information about kannel repository sources.list</para>
 
 	<para>Installing or upgrading Kannel from a file</para>
 
@@ -1005,10 +1005,10 @@
 	<para>A variable definition line has the name of the variable,
 	and equals sign (<literal>=</literal>) and the value of the
 	variable. The name of the variable can contain any characters
-	except whitespace and equals. The value of the variable is a
+	except white space and equals. The value of the variable is a
 	string, with or without quotation marks (<literal></literal>)
 	around it. Quotation marks are needed if the variable needs to
-	begin or end with whitespace or contain special
+	begin or end with white space or contain special
 	characters. Normal C 	escape character syntax works inside 
 	quotation marks.</para>
 
@@ -1319,7 +1319,7 @@ admin-password = f00bar
 		  String defining a custom log file line format. May use escape codes as defined
 		  later on to substitute values of the messages into the log entry. If no
 		  custom log format is used the standard format will be:
-		  <literal>"%t %l [SMSC:%i] [SVC:%n] [ACT:%A] [BINF:%B] [from:%p] [to:%P] 
+		  <literal>"%t %l [SMSC:%i] [SVC:%n] [ACT:%A] [BINF:%B] [FID:%F] [from:%p] [to:%P] 
 		           [flags:%m:%c:%M:%C:%d] [msg:%L:%b] [udh:%U:%u]"</literal>
      </entry></row>
 
@@ -1362,13 +1362,24 @@ admin-password = f00bar
         automatically discarded
      </entry></row>
 
-    <row><entry><literal>store-file</literal></entry>
+    <row><entry><literal>store-type</literal></entry>
      <entry>filename</entry>
      <entry valign="bottom">
-        A file in which any received SMS messages are stored until
-        they are successfully handled. By using this variable, no SMS
-        messages are lost in Kannel, but theoretically some messages
-        can duplicate when system is taken down violently. 
+        Kannel can use store subsystem that means storing messages
+        on hard disk until they are successfully handled. By using
+        this subsystem, no SMS messages are lost in Kannel even by
+        crash, but theoretically some messages can duplicate when
+        system is taken down violently. 
+        This variable defines a type of backend used for store
+        subsystem. Now two types are supported:
+        a) file: writes store into one single file
+        b) spool: writes store into spool directory (one file for each message)
+     </entry></row>
+
+    <row><entry><literal>store-location</literal></entry>
+     <entry>filename</entry>
+     <entry valign="bottom">
+        Depends on <literal>store-type</literal> option used, it is ether file or spool directory.
      </entry></row>
 
     <row><entry><literal>store-dump-freq</literal></entry>
@@ -1477,6 +1488,14 @@ admin-password = f00bar
         queues grow very long).
      </entry></row>
 
+     <row><entry><literal>sms-outgoing-queue-limit</literal></entry>
+     <entry>number of messages</entry>
+     <entry valign="bottom">
+        Set maximum size of outgoing message queue. After number of messages
+        has hit this value, Kannel began to discard them.
+        Value -1 default, means that the queue of infinite length is accepted.
+     </entry></row>
+
      <row><entry><literal>white-list-regex</literal></entry>
         <entry>POSIX regular expression</entry>
         <entry valign="bottom">
@@ -1512,6 +1531,22 @@ admin-password = f00bar
         <entry valign="bottom">
         Maximum retry attempts for the temporarily failed messages.
         Defaults to -1, means: unlimited.
+        </entry>   
+     </row>
+
+     <row><entry><literal>sms-combine-concatenated-mo</literal></entry>
+        <entry>boolean</entry>
+        <entry valign="bottom">
+        Whether Kannel should attempt to combine concatenated MO SMS
+        prior to passing them over to smsbox. Default is true
+        </entry>   
+     </row>
+
+     <row><entry><literal>sms-combine-concatenated-mo-timeout</literal></entry>
+        <entry>seconds</entry>
+        <entry valign="bottom">
+        How long to wait for all concatenated message parts to arrive before timeouting.
+        Default 1800 seconds.
         </entry>   
      </row>
 
@@ -1586,7 +1621,7 @@ white-list = "http://localhost/whitelist.txt"
   packet comes with two sample configuration files,
   <literal>smskannel.conf</literal> and
   <literal>wapkannel.conf</literal> (in <literal>gw</literal>
-  subdirectory), of which the first one is for
+  sub directory), of which the first one is for
   testing out SMS Kannel and the second one for setting up a WAP
   Kannel. Feel free to edit those configuration files to set up your
   own specialized system.</para>
@@ -1890,6 +1925,13 @@ commands never arrive nor can you restart it via WAP anymore.</para>
 		  you to change the current log-level of the log-files on the fly.
    </entry></row>
 
+	<row><entry><literal>reload-lists</literal></entry>
+   <entry valign="bottom">
+        Re-loads the 'white-list' and 'black-list' URLs provided in the
+        core group. This allows Kannel to keep running while the remote
+        lists change and signal bearerbox to re-load them on the fly.
+   </entry></row>
+
   </tbody>
   </tgroup>
  </table>
@@ -2041,7 +2083,7 @@ bearerbox-host = localhost
      <entry>filename</entry>
      <entry valign="bottom">
         A file containing all requested URLs from clients while wapbox operation,
-        including client IP, HTTP server User-Agent string, HTTP reponse code, 
+        including client IP, HTTP server User-Agent string, HTTP response code, 
         size of reply.
      </entry></row>
 
@@ -2076,11 +2118,11 @@ bearerbox-host = localhost
 	 If set wapbox will use a strict policy in XML parsing the WML
 	 deck. If not set it will be more relaxing and let the XML parser
 	 recover from parsing errors. This has mainly impacts in how smart
-	 the WML deck and it's character set encoding can be addopted, even
+	 the WML deck and it's character set encoding can be adopted, even
 	 while you used an encoding that does not fit the XML preamble.
 	 BEWARE: This may be a vulnerability in your wapbox for large bogus 
 	 WML input. Therefore this defaults to 'yes', strict parsing.
-	 is assimed.
+	 is assumed.
 	 </entry></row>
 
   </tbody>
@@ -2389,7 +2431,7 @@ secret-nas = radius
      </entry></row>
 
     <row><entry><literal>throughput</literal></entry>
-      <entry><literal>number (messages/sec)</literal></entry>
+      <entry><literal>float (messages/sec)</literal></entry>
       <entry valign="bottom">
         If SMSC requires that Kannel limits the number of messages per second, 
         use this variable. This is considered as active throttling. (optional)
@@ -2474,21 +2516,30 @@ secret-nas = radius
         As some SMS Centers do not follow the standards in character
         coding, an <literal>alt-charset</literal> character conversion is
         presented. This directive acts different for specific SMSC types.
-		  Please see your SMSC module type you want to use for more details.
+		Please see your SMSC module type you want to use for more details.
+     </entry></row>
+
+   <row><entry><literal>alt-dcs</literal></entry>
+     <entry><literal>boolean</literal></entry>
+     <entry valign="bottom">
+	   Optional data coding scheme value usage. Sets the 'alt-dcs' value 
+	   for the sendsms HTTP interface to a fixed value for each SMS sent 
+	   via this SMSC connection. 
+	   If equals to yes, uses FX. If equals to no (default), uses 0X.
      </entry></row>
 
    <row><entry><literal>our-host</literal></entry>
      <entry><literal>hostname</literal></entry>
      <entry valign="bottom">
        Optional hostname or IP address in which to bind the connection in our
-     end. TCP/IP connection only.
+       end. TCP/IP connection only.
      </entry></row>
 
     <row><entry><literal>log-file</literal></entry>
      <entry>filename</entry>
      <entry valign="bottom">
         A file in which to write a log of the given smsc output. Hence
- 		  this allows to log smsc specific entries to a separate file.
+        this allows to log smsc specific entries to a separate file.
      </entry></row>
 
     <row><entry><literal>log-level</literal></entry>
@@ -2607,6 +2658,15 @@ secret-nas = radius
         SMSC. In a case of multiple preferences, one is selected at random.
         See section on regular 
         expressions for details.
+        </entry>   
+     </row>
+
+     <row><entry><literal>max-sms-octets</literal></entry>
+        <entry>number</entry>
+        <entry valign="bottom">
+        Maximum allowed octets for this SMSC. If this maximum exceeds Kannel will split
+        SMS into multiparts.
+        Default: 140
         </entry>   
      </row>
 
@@ -2898,7 +2958,7 @@ smsc-password = bar
 		  0x00 - disconnect/reconnect, (default) 0x01 - as is now, re-queue, 
 		  but this could potentially result in the msg arriving twice
 		  0x02 - just carry on waiting (given that the wait-ack should never 
-		  expire this is the mst accurate)
+		  expire this is the must accurate)
      </entry></row>
 
     <row><entry><literal>flow-control</literal></entry>
@@ -3270,7 +3330,7 @@ address-range = ""
 		  0x00 - disconnect/reconnect, (default) 0x01 - as is now, re-queue, 
 		  but this could potentially result in the msg arriving twice
 		  0x02 - just carry on waiting (given that the wait-ack should never 
-		  expire this is the mst accurate)
+		  expire this is the must accurate)
      </entry></row>
 
    <row><entry><literal>validityperiod</literal></entry>
@@ -3573,7 +3633,8 @@ pin = 2345
      <entry><literal>device-name</literal></entry>
      <entry valign="bottom">
           The device the modem is connected to, like <literal>/dev/ttyS0</literal>.
-          When the device name is set to <literal>rawtcp</literal>, two other
+          When the device name is set to <literal>rawtcp</literal> or 
+          <literal>telnet</literal> two other
           variables are required in the configuration: <literal>host</literal>
           and <literal>port</literal>. See the note below.
       </entry></row>
@@ -3657,6 +3718,38 @@ pin = 2345
        <entry valign="bottom">
           TCP port to connect to on <literal>rawtcp-host</literal>.
           Required if <literal>device</literal> is set to <literal>rawtcp</literal>.
+       </entry></row>
+
+     <row><entry><literal>smsc-username</literal></entry>
+       <entry><literal>string</literal></entry>
+       <entry valign="bottom">
+          Username to use on a Login: or User: prompt prior to be connected
+          to the modem. Useful if modem is connected to a terminal server
+          and <literal>rawtcp</literal> mode or <literal>telnet</literal> mode
+          are used.
+       </entry></row>
+
+     <row><entry><literal>smsc-password</literal></entry>
+       <entry><literal>string</literal></entry>
+       <entry valign="bottom">
+          Username to use on a Password prompt prior to be connected
+          to the modem. Useful if modem is connected to a terminal server
+          and <literal>rawtcp</literal> mode or <literal>telnet</literal> mode
+          are used. <literal>smsc-password</literal> can be used alone
+          without <literal>smsc-username</literal> for devices only asking for
+          a password.
+       </entry></row>
+
+    <row><entry><literal>login-prompt</literal></entry>
+       <entry><literal>string</literal></entry>
+       <entry valign="bottom">
+          An alternative string to be used instead of Login: or Username:
+       </entry></row>
+
+     <row><entry><literal>password-prompt</literal></entry>
+       <entry><literal>string</literal></entry>
+       <entry valign="bottom">
+           An alternative string to be used instead of Password:
        </entry></row>
 
    </tbody></tgroup></informaltable>
@@ -3900,7 +3993,7 @@ send-url = "http://localhost:20022"
      <entry><literal>string</literal></entry>
      <entry valign="bottom">
         Type of HTTP connection. Currently supported are: 'kannel', 
-		  'brunet', 'xidris', 'wapme'.
+		  'brunet', 'xidris', 'wapme', 'clickatell' and 'generic'.
      </entry></row>
 
    <row><entry><literal>send-url (m)</literal></entry>
@@ -3936,6 +4029,12 @@ send-url = "http://localhost:20022"
        gateway
      </entry></row>
 
+   <row><entry><literal>use-ssl</literal></entry>
+   <entry><literal>boolean</literal></entry>
+   <entry valign="bottom">
+      Defines whether listen port should use SSL.
+   </entry></row>
+
    <row><entry><literal>connect-allow-ip</literal></entry>
      <entry><literal>IP-list</literal></entry>
      <entry valign="bottom">
@@ -3955,13 +4054,58 @@ send-url = "http://localhost:20022"
      <entry valign="bottom">
        Password for username, if needed.
      </entry></row>
+     
+   <row><entry><literal>status-success-regex (o)</literal></entry>
+     <entry><literal>POSIX regular expression</literal></entry>
+     <entry valign="bottom">
+       Regular expression for system-type 'generic' to match against HTTP 
+       response body conent, indicating a successfull submission. 
+     </entry></row>
+     
+   <row><entry><literal>status-permfail-regex (o)</literal></entry>
+     <entry><literal>POSIX regular expression</literal></entry>
+     <entry valign="bottom">
+       Regular expression for system-type 'generic' to match against HTTP 
+       response body conent, indicating a permanent failure. 
+     </entry></row>
 
+   <row><entry><literal>status-tempfail-regex (o)</literal></entry>
+     <entry><literal>POSIX regular expression</literal></entry>
+     <entry valign="bottom">
+       Regular expression for system-type 'generic' to match against HTTP 
+       response body conent, indicating a temporary failure. 
+     </entry></row>
+    
    </tbody></tgroup></informaltable>
 
-   <para>This module can be easily adopted to other HTTP-based interfaces.
+   <para>For a generic HTTP-based relay, the system-type 'generic' can be used.
+   It can use the escape codes known from sms-service's get-url config
+   directives in the send-url string to indicate the HTTP API calling style of 
+   the remote HTTP server, and the 3 HTTP body response parsing regular 
+   expressions 'status-success-regex' for successfull acknowledge, 
+   'status-permfail-regex' for permanent failure and 'status-tempfail-regex' 
+   for temporary failure. An example for a 'generic' group looks like this:
    </para>
- 
+
+<programlisting>
+group = smsc
+smsc = http
+system-type = generic
+port = 13015
+send-url = "http://www.foobar.com/mt.php?from=%P&amp;to=%p&amp;text=%b"
+status-success-regex = "ok"
+status-permfail-regex = "failure"
+status-tempfail-regex = "retry later"
+</programlisting>
+
+  <para>Beware that this generic HTTP system-type is for MT only. We don't
+  provide a way for the MO side too. For MO traffic we simply expect the
+  remote HTTP caller to use Kannel's sendsms HTTP API on the given port to 
+  inject MO messages.
+  </para> 
+  
 </sect2>
+
 
 <sect2>
 <title>MT to MO direction switching</title>
@@ -5353,18 +5497,18 @@ log-level = 0
 
   <para>The smsbox routing solves this for the inbound direction. In
   certain scenarios you want that bearerbox to know to which smsbox
-  instance it should pass messages. I.e. if you implement our own boxes
+  instance it should pass messages. I.e. if you implement own boxes
   that pass messages to bearerbox and expect to receive messages defined
   on certain rules, like receiver number or smsc-id. This is the case
   for EMI/UCP and SMPP proxies that can be written easily using smsbox
   routing facility.
   </para>
 
-  <para>If you smppbox handles the SMPP specific communication to your
-  EMSEs, and if an client send a submit_sm PDU, smppbox would transform
+  <para>If you box handles the SMPP server specific communication to your
+  EMSEs, and if an client send a submit_sm PDU, the box would transform
   the message into Kannel message representation and inject the message to
   bearerbox as if it would be an smsbox. As you want to assign your clients
-  shortcuts for certain networks or route any inbound traffic from a certain
+  shortcodes for certain networks or route any inbound traffic from a certain
   smsc link connected to bearerbox, you need to separate in the scope of 
   bearerbox where the inbound message will be going to. An example may
   look like this:
@@ -5377,13 +5521,31 @@ smsbox-id = mysmsc
 
 group = smsbox-route
 smsbox-id = mysmsc
-shortcuts = "1111;2222;3333"
+shortcode = "1111;2222;3333"
 </programlisting>
 
-	which means and inbound message with receiver number 1111, 2222 or 3333
+	Which means any inbound message with receiver number 1111, 2222 or 3333
 	will be delivered to the smsbox instance that has identified itself
 	via the id "mysmsc" to bearerbox. Using this routing the smsbox instance
-	(which may be an EMI/UCP or SMPP proxy) is able to send a deliver_sm PDU
+	(which may be an EMI/UCP or SMPP proxy) is able to send a deliver_sm PDU. 
+	Another example showing the combination use of criteria smsc-id and 
+	shortcode looks like this:
+
+<programlisting>
+group = smsbox
+...
+smsbox-id = mysmsc
+...
+
+group = smsbox-route
+smsbox-id = mysmsc
+smsc-id = "A;B;C"
+shortcode = "1111;2222"
+</programlisting>
+
+	Which means any inbound message with receiver number 1111 or 2222 that have
+	been originating from the smsc-id connections A, B or C will be delivered
+	to the via the id "mysmsc" to bearerbox.
 	</para>
 
    <para>smsbox-route inherits from core the following fields:
@@ -5412,22 +5574,26 @@ shortcuts = "1111;2222;3333"
         Defines for which smsbox instance the routing rules do apply.
      </entry></row>
 
-	 <row><entry><literal>smsc-ids</literal></entry>
+	 <row><entry><literal>smsc-id</literal></entry>
      <entry>word-list</entry>
      <entry valign="bottom">
         If set, specifies from which smsc-ids all inbound messages should
 		  be routed to this smsbox instance. List contains smsc-ids separated
 		  by semicolon (";"). This rule may be used to pull any smsc specific
-		  message stream to an smsbox instance.
+		  message stream to an smsbox instance. If used in combination with 
+		  config directive shortcode, then this is another matching criteria
+		  for the routing decission.
      </entry></row>
 
-	 <row><entry><literal>shortcuts</literal></entry>
+	 <row><entry><literal>shortcode</literal></entry>
      <entry>number-list</entry>
      <entry valign="bottom">
         If set, specifies which receiver numbers for inbound messages should
 		  be routed to this smsbox instance. List contains numbers separated
 		  by semicolon (";"). This rule may be used to pull receiver number
-		  specific message streams to an smsbox instance.
+		  specific message streams to an smsbox instance. If used in combination
+		  with config directive smsc-id, then only messages originating from
+		  the connections in the smsc-id are matched against the shortcode list.
      </entry></row>
 
   </tbody>
@@ -5604,6 +5770,19 @@ get-url = "http://%S"
          <literal>accepted-smsc</literal>
         is "RL;SON", accept messages which originate from SMSC with
         ID set as 'RL' or 'SON'
+     </entry></row>
+   
+   <row><entry><literal>accepted-account</literal></entry>
+     <entry>id-list</entry>
+     <entry valign="bottom">
+        Accept ONLY SMS messages arriving with a matching ACCOUNT field.
+        <footnote><para>Even if this service is denied,
+	Kannel still searches for other service which accepts the message,
+	or default service.</para></footnote>
+        Separate multiple entries with ';'. For example, if 
+         <literal>accepted-account</literal>
+        is "FOO;BAR", accept messages which originate with the ACCOUNT
+        field set as 'FOO' or 'BAR'
      </entry></row>
 
    <row><entry><literal>allowed-prefix</literal></entry>
@@ -5796,6 +5975,18 @@ get-url = "http://%S"
         </entry>   
      </row>
 
+     <row><entry><literal>accepted-account-regex</literal></entry>
+        <entry>POSIX regular expression</entry>
+        <entry valign="bottom">
+        Accept ONLY SMS messages arriving with a matching ACCOUNT field.
+        <footnote><para>Even if this service is denied,
+	Kannel still searches for other service which accepts the message,
+	or default service.</para></footnote>
+        See section on regular 
+        expressions for details.
+        </entry>   
+     </row>
+
      <row><entry><literal>allowed-prefix-regex</literal></entry>
         <entry>POSIX regular expression</entry>
         <entry valign="bottom">
@@ -5950,6 +6141,11 @@ the delivery report value
 the delivery report SMSC reply, if any
 </entry></row>
 
+<row><entry><literal>%F</literal></entry><entry>
+the <literal>foreign</literal> (smsc-provided) message ID. Only
+relevant on DLR url's.
+</entry></row>
+
 <row><entry><literal>%n</literal></entry><entry>
 the sendsms-user or sms-service name
 </entry></row>
@@ -5984,8 +6180,9 @@ recoded from Unicode, it will be "WINDOWS-1252"
 billing identifier/information of incoming message. The value
 depends on the SMSC module and the associated billing semantics
 of the specific SMSC providing the information. For EMI2 the value
-is the XSer 0c field, for SMPP it is the service_type of the 
-deliver_sm PDU. (Note: This is used for proxying billing 
+is the XSer 0c field, for SMPP MO it is the service_type of the 
+deliver_sm PDU, and for SMPP DLR it is the DLR message err component. 
+(Note: This is used for proxying billing 
 information to external applications. There is no semantics 
 associated while processing these.)
 </entry></row>
@@ -5995,6 +6192,10 @@ account identifier/information of incoming message. The value
 depends on the SMSC module and has been introduced to allow the
 forwarding of an operator ID from aggregator SMSCs to the application
 layer, hence the smsbox HTTP calling instance.
+</entry></row>
+
+<row><entry><literal>%O</literal></entry><entry>
+DCS (Data coding schema) value.
 </entry></row>
 
 <row><entry><literal>%f</literal></entry><entry>
@@ -6306,7 +6507,7 @@ text = "No action specified"
       &#60;dlr-url&#62;dlr-url&#60;/dlr-url&#62;
     &#60;/statusrequest&#62;
 
-    &#60;!-- request from Kannel to application --&#62;
+    &#60;!-- request from application to Kannel --&#62;
     &#60;from&#62;
       &#60;user&#62;username&#60;/user&#62;
       &#60;username&#62;username&#60;/username&#62; 
@@ -6316,7 +6517,7 @@ text = "No action specified"
     &#60;/from&#62;
     &#60;to&#62;smsc-id&#60;/to&#62;
 
-    &#60;!-- request from application to Kannel --&#62;
+    &#60;!-- request from Kannel to application --&#62;
     &#60;from&#62;smsc-id&#60;/from&#62;
     &#60;to&#62;service-name&#60;/to&#62;
 
@@ -8381,6 +8582,14 @@ test/fakesmsc -m 1 "100 500 udh %0eudh+stuff+here main+message"
 
 </sect3>
 <sect3>
+<title>Interactive mode</title>
+    <para>If no messages are passed on the command line when starting fakesmsc,
+		it runs on "interactive mode".</para>
+		<para>When running on this mode, fakesmsc accept single messages typed on stdin
+		(without quotation marks) and displays the responses on stdout. This allows
+		for a more finely controlled interaction with the backend applications.</para>
+</sect3>
+<sect3>
 <title>Fakesmsc command line options</title>
 
    <para>Fake SMS center can be started with various optional command
@@ -9140,8 +9349,8 @@ test/fakesmsc -m 1 "100 500 udh %0eudh+stuff+here main+message"
 <title>Bearerbox Access Log</title>
 
 	<screen><computeroutput>
-	2001-01-01 12:00:00 Sent SMS [SMSC:smsc] [SVC:sms] [from:12345] 
-	    [to:67890] [flags:0:1:0:0:0] [msg:11:Hello World] [udh:0]
+	2001-01-01 12:00:00 Sent SMS [SMSC:smsc] [SVC:sms] [ACT:account] [BINFO:binfo] [FID:1234567890]
+            [from:12345] [to:67890] [flags:0:1:0:0:0] [msg:11:Hello World] [udh:0]
 	</computeroutput></screen>	
 
  <informaltable frame="none">
@@ -9208,6 +9417,12 @@ test/fakesmsc -m 1 "100 500 udh %0eudh+stuff+here main+message"
      <entry>0:</entry>
      <entry valign="bottom">
 	     Size of UDH and UDH Hex dump 
+     </entry></row>
+
+     <row><entry>Foreign ID</entry>
+     <entry>1234567890</entry>
+     <entry valign="bottom">
+	     Foreign (SMSC-provided) Message ID (only available on MT messages)
      </entry></row>
 
    </tbody>

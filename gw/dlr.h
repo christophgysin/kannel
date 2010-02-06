@@ -1,7 +1,7 @@
 /* ==================================================================== 
  * The Kannel Software License, Version 1.0 
  * 
- * Copyright (c) 2001-2005 Kannel Group  
+ * Copyright (c) 2001-2009 Kannel Group  
  * Copyright (c) 1998-2001 WapIT Ltd.   
  * All rights reserved. 
  * 
@@ -78,6 +78,7 @@
 #define DLR_IS_ENABLED(dlr)          (DLR_IS_DEFINED(dlr) && (dlr & (DLR_SUCCESS | DLR_FAIL | DLR_BUFFERED | DLR_SMSC_SUCCESS | DLR_SMSC_FAIL)))
 #define DLR_IS_ENABLED_DEVICE(dlr)   (DLR_IS_DEFINED(dlr) && (dlr & (DLR_SUCCESS | DLR_FAIL | DLR_BUFFERED)))
 #define DLR_IS_ENABLED_SMSC(dlr)     (DLR_IS_DEFINED(dlr) && (dlr & (DLR_SMSC_SUCCESS | DLR_SMSC_FAIL)))
+#define DLR_IS_NOT_FINAL(dlr)        (DLR_IS_DEFINED(dlr) && (dlr & (DLR_BUFFERED | DLR_SMSC_SUCCESS)))
 #define DLR_IS_SUCCESS_OR_FAIL(dlr)  (DLR_IS_DEFINED(dlr) && (dlr & (DLR_SUCCESS | DLR_FAIL)))
 #define DLR_IS_SUCCESS(dlr)          (DLR_IS_DEFINED(dlr) && (dlr & DLR_SUCCESS))
 #define DLR_IS_FAIL(dlr)             (DLR_IS_DEFINED(dlr) && (dlr & DLR_FAIL))
@@ -94,7 +95,7 @@ void dlr_shutdown(void);
 /* 
  * Add a new entry to the list
  */
-void dlr_add(const Octstr *smsc, const Octstr *ts, const Msg *msg);
+void dlr_add(const Octstr *smsc, const Octstr *ts, Msg *msg);
 
 /* 
  * Find an entry in the list. If there is one a message is returned and 

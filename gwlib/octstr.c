@@ -1,7 +1,7 @@
 /* ====================================================================
  * The Kannel Software License, Version 1.0 
  * 
- * Copyright (c) 2001-2005 Kannel Group  
+ * Copyright (c) 2001-2009 Kannel Group  
  * Copyright (c) 1998-2001 WapIT Ltd.   
  * All rights reserved. 
  * 
@@ -252,6 +252,12 @@ Octstr *octstr_create_from_data_real(const char *data, long len, const char *fil
     gw_assert(len >= 0);
     if (data == NULL)
         gw_assert(len == 0);
+
+    /* if gw_assert is disabled just return NULL
+     * and caller will check for NULL or just crash.
+     */
+    if (len < 0 || (data == NULL && len != 0))
+        return NULL;
 
     ostr = gw_malloc_trace(sizeof(*ostr), file, line, func);
     if (len == 0) {
@@ -844,6 +850,19 @@ void octstr_convert_range(Octstr *ostr, long pos, long len,
 }
 
 
+static int inline make_printable(int c)
+{
+    return isprint(c) ? c : '.';    
+}
+
+
+void octstr_convert_printable(Octstr *ostr)
+{
+    octstr_convert_range(ostr, 0, ostr->len, make_printable);
+}
+
+
+
 int octstr_compare(const Octstr *ostr1, const Octstr *ostr2)
 {
     int ret;
@@ -897,6 +916,7 @@ int octstr_case_compare(const Octstr *os1, const Octstr *os2)
         return 0;
     }
 
+    c1 = c2 = 0;
     for (i = 0; i < len; ++i) {
         c1 = toupper(os1->data[i]);
         c2 = toupper(os2->data[i]);
@@ -1246,6 +1266,9 @@ void octstr_insert(Octstr *ostr1, const Octstr *ostr2, long pos)
 
 void octstr_truncate(Octstr *ostr, int new_len)
 {
+    if (ostr == NULL)
+        return;
+        
     seems_valid(ostr);
     gw_assert(!ostr->immutable);
     gw_assert(new_len >= 0);
@@ -1563,7 +1586,7 @@ List *octstr_split(const Octstr *os, const Octstr *sep)
     pos = 0;
     seplen = octstr_len(sep);
 
-    while ((next = octstr_search(os, sep, pos)) > 0) {
+    while ((next = octstr_search(os, sep, pos)) >= 0) {
         gwlist_append(list, octstr_copy(os, pos, next - pos));
         pos = next + seplen;
     }
@@ -2195,11 +2218,16 @@ static void format_prec(struct format *format, const char **fmt,
 
 static void format_type(struct format *format, const char **fmt)
 {
-    switch (**fmt)
-    {
+    switch (**fmt) {
     case 'h':
-    case 'l':
         format->type = **fmt;
+        ++(*fmt);
+        break;
+    case 'l':
+        if (*(*fmt + 1) == 'l'){
+           format->type = 'L';
+           ++(*fmt);
+        } else format->type = **fmt;
         ++(*fmt);
         break;
     }
@@ -2211,8 +2239,8 @@ static void convert(Octstr *os, struct format *format, const char **fmt,
 {
     Octstr *new;
     char *s, *pad;
-    long n;
-    unsigned long u;
+    long long n;
+    unsigned long long u;
     char tmpfmt[1024];
     char tmpbuf[1024];
     char c;
@@ -2230,6 +2258,9 @@ static void convert(Octstr *os, struct format *format, const char **fmt,
     case 'd':
     case 'i':
         switch (format->type) {
+        case 'L':
+            n = va_arg(VALST(args), long long);
+            break;
         case 'l':
             n = va_arg(VALST(args), long);
             break;
@@ -2248,18 +2279,21 @@ static void convert(Octstr *os, struct format *format, const char **fmt,
     case 'u':
     case 'x':
     case 'X':
-	switch (format->type) {
-	case 'l':
-	    u = va_arg(VALST(args), unsigned long);
-	    break;
-        case 'h':
-            u = (unsigned short) va_arg(VALST(args), unsigned int);
-            break;
-        default:
-            u = va_arg(VALST(args), unsigned int);
-            break;
-        }
-        tmpfmt[0] = '%';
+   switch (format->type) {
+   case 'l':
+      u = va_arg(VALST(args), unsigned long);
+      break;
+   case 'L':
+      u = va_arg(VALST(args), unsigned long long);
+      break;
+   case 'h':
+      u = (unsigned short) va_arg(VALST(args), unsigned int);
+      break;
+   default:
+      u = va_arg(VALST(args), unsigned int);
+      break;
+   }
+   tmpfmt[0] = '%';
 	tmpfmt[1] = 'l';
 	tmpfmt[2] = **fmt;
 	tmpfmt[3] = '\0';

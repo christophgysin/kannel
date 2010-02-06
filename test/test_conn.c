@@ -1,7 +1,7 @@
 /* ==================================================================== 
  * The Kannel Software License, Version 1.0 
  * 
- * Copyright (c) 2001-2005 Kannel Group  
+ * Copyright (c) 2001-2009 Kannel Group  
  * Copyright (c) 1998-2001 WapIT Ltd.   
  * All rights reserved. 
  * 
@@ -79,11 +79,12 @@ int main(int argc, char **argv)
 
     host = octstr_create(argv[1]);    
     port = atoi(argv[2]);
+    i = 50;
     
     debug("",0,"Connecting to host '%s', port %d, looping %i times.", 
           octstr_get_cstr(host), port, i);
     
-    for (i = 0; i = 50; i++) {
+    for (i = 0; i <= 50; i++) {
         conn = conn_open_tcp(host, port, NULL);
         if (conn == NULL) {
             panic(0, "Couldn't connect.");

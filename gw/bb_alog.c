@@ -1,7 +1,7 @@
 /* ==================================================================== 
  * The Kannel Software License, Version 1.0 
  * 
- * Copyright (c) 2001-2005 Kannel Group  
+ * Copyright (c) 2001-2009 Kannel Group  
  * Copyright (c) 1998-2001 WapIT Ltd.   
  * All rights reserved. 
  * 
@@ -100,6 +100,7 @@ static Octstr *custom_log_format = NULL;
  *   %t - the time of the message, formatted as "YYYY-MM-DD HH:MM:SS"
  *   %T - the time of the message, in UNIX epoch timestamp format
  *   %I - the internal message ID
+ *   %F - the foreign (smsc-provided) message ID
  *
  * Most escape codes should be compatible with escape codes used in
  * sms-service groups.
@@ -125,6 +126,8 @@ static Octstr *get_pattern(SMSCConn *conn, Msg *msg, const char *message)
     udh = msg->sms.udhdata ? octstr_duplicate(msg->sms.udhdata) : octstr_create("");
     if ((msg->sms.coding == DC_8BIT || msg->sms.coding == DC_UCS2))
         octstr_binary_to_hex(text, 1);
+    else
+        octstr_convert_printable(text);
     octstr_binary_to_hex(udh, 1);
 
     if (octstr_len(text)) {
@@ -297,6 +300,11 @@ static Octstr *get_pattern(SMSCConn *conn, Msg *msg, const char *message)
             }
             break;
 
+	case 'F': /* the foreign (smsc-provided) message ID */
+	    if (msg->sms.foreign_id != NULL)
+	        octstr_append(result, msg->sms.foreign_id);
+	    break;
+
         /* XXX add more here if needed */
 
 	case '%':
@@ -313,6 +321,8 @@ static Octstr *get_pattern(SMSCConn *conn, Msg *msg, const char *message)
     } /* for ... */
 
     gwlist_destroy(word_list, octstr_destroy_item);
+    octstr_destroy(text);
+    octstr_destroy(udh);
 
     return result;
 }
@@ -363,15 +373,18 @@ void bb_alog_sms(SMSCConn *conn, Msg *msg, const char *message)
 
         if ((msg->sms.coding == DC_8BIT || msg->sms.coding == DC_UCS2))
             octstr_binary_to_hex(text, 1);
+        else
+            octstr_convert_printable(text);
         octstr_binary_to_hex(udh, 1);
 
-        alog("%s [SMSC:%s] [SVC:%s] [ACT:%s] [BINF:%s] [from:%s] [to:%s] [flags:%ld:%ld:%ld:%ld:%ld] "
+        alog("%s [SMSC:%s] [SVC:%s] [ACT:%s] [BINF:%s] [FID:%s] [from:%s] [to:%s] [flags:%ld:%ld:%ld:%ld:%ld] "
              "[msg:%ld:%s] [udh:%ld:%s]",
              message,
              octstr_get_cstr(cid),
              msg->sms.service ? octstr_get_cstr(msg->sms.service) : "",
              msg->sms.account ? octstr_get_cstr(msg->sms.account) : "",
              msg->sms.binfo ? octstr_get_cstr(msg->sms.binfo) : "",
+             msg->sms.foreign_id ? octstr_get_cstr(msg->sms.foreign_id) : "",
              msg->sms.sender ? octstr_get_cstr(msg->sms.sender) : "",
              msg->sms.receiver ? octstr_get_cstr(msg->sms.receiver) : "",
              msg->sms.mclass, msg->sms.coding, msg->sms.mwi, msg->sms.compress,

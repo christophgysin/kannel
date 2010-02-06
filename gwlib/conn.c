@@ -1,7 +1,7 @@
 /* ==================================================================== 
  * The Kannel Software License, Version 1.0 
  * 
- * Copyright (c) 2001-2005 Kannel Group  
+ * Copyright (c) 2001-2009 Kannel Group  
  * Copyright (c) 1998-2001 WapIT Ltd.   
  * All rights reserved. 
  * 
@@ -397,17 +397,8 @@ static void unlocked_register_pollout(Connection *conn, int onoff)
 }
 
 #ifdef HAVE_LIBSSL
-
-Connection *conn_open_ssl(Octstr *host, int port, Octstr *certkeyfile,
-			  Octstr *our_host)
+static int conn_init_client_ssl(Connection *ret, Octstr *certkeyfile)
 {
-    Connection *ret;
-
-    /* open the TCP connection */
-    if (!(ret = conn_open_tcp(host, port, our_host))) {
-        return NULL;
-    }
-
     ret->ssl = SSL_new(global_ssl_context);
 
     /*
@@ -426,7 +417,7 @@ Connection *conn_open_ssl(Octstr *host, int port, Octstr *certkeyfile,
             error(0, "conn_open_ssl: private key isn't consistent with the "
                      "certificate from file %s (or failed reading the file)",
                   octstr_get_cstr(certkeyfile));
-            goto error;
+            return -1;
         }
     }
 
@@ -434,25 +425,57 @@ Connection *conn_open_ssl(Octstr *host, int port, Octstr *certkeyfile,
     if (SSL_set_fd(ret->ssl, ret->fd) == 0) {
         /* SSL_set_fd failed, log error */
         error(errno, "SSL: OpenSSL: %.256s", ERR_error_string(ERR_get_error(), NULL));
-        goto error;
+        return -1;
     }
 
     /*
      * make sure the socket is non-blocking while we do SSL_connect
      */
     if (socket_set_blocking(ret->fd, 0) < 0) {
-        goto error;
+        return -1;
     }
     BIO_set_nbio(SSL_get_rbio(ret->ssl), 1);
     BIO_set_nbio(SSL_get_wbio(ret->ssl), 1);
 
     SSL_set_connect_state(ret->ssl);
+    
+    return 0;
+}
+
+Connection *conn_open_ssl_nb(Octstr *host, int port, Octstr *certkeyfile,
+                          Octstr *our_host)
+{
+    Connection *ret;
+
+    /* open the TCP connection */
+    if (!(ret = conn_open_tcp_nb(host, port, our_host))) {
+        return NULL;
+    }
+    
+    if (conn_init_client_ssl(ret, certkeyfile) == -1) {
+        conn_destroy(ret);
+        return NULL;
+    }
+    
+    return ret;
+}
+
+Connection *conn_open_ssl(Octstr *host, int port, Octstr *certkeyfile,
+			  Octstr *our_host)
+{
+    Connection *ret;
+
+    /* open the TCP connection */
+    if (!(ret = conn_open_tcp(host, port, our_host))) {
+        return NULL;
+    }
+
+    if (conn_init_client_ssl(ret, certkeyfile) == -1) {
+        conn_destroy(ret);
+        return NULL;
+    }
 
     return ret;
-
-error:
-    conn_destroy(ret);
-    return NULL;
 }
 
 #endif /* HAVE_LIBSSL */
@@ -523,6 +546,10 @@ Connection *conn_open_tcp_with_port(Octstr *host, int port, int our_port,
 }
 
 
+/*
+ * XXX bad assumption here that conn_wrap_fd for SSL can only happens
+ * for the server side!!!! FIXME !!!!
+ */
 Connection *conn_wrap_fd(int fd, int ssl)
 {
     Connection *conn;
@@ -818,7 +845,9 @@ int conn_register_real(Connection *conn, FDSet *fdset,
 void conn_unregister(Connection *conn)
 {
     FDSet *set = NULL;
-    int fd;
+    int fd = -1;
+    void *data = NULL;
+    conn_callback_data_destroyer_t *destroyer = NULL;
     
     gw_assert(conn != NULL);
 
@@ -834,10 +863,14 @@ void conn_unregister(Connection *conn)
         fd = conn->fd;
         conn->registered = NULL;
         conn->callback = NULL;
-        /* call data destroyer */
-        if (conn->callback_data != NULL && conn->callback_data_destroyer != NULL)
-            conn->callback_data_destroyer(conn->callback_data);
+        /*
+         * remember and don't destroy data and data_destroyer because we
+         * may be in callback right now. So destroy only after fdset_unregister
+         * call which guarantee us we are not in callback anymore.
+         */
+        data = conn->callback_data;
         conn->callback_data = NULL;
+        destroyer = conn->callback_data_destroyer;
         conn->callback_data_destroyer = NULL;
         conn->listening_pollin = 0;
         conn->listening_pollout = 0;
@@ -845,10 +878,14 @@ void conn_unregister(Connection *conn)
 
     unlock_in(conn);
     unlock_out(conn);
-    
+
     /* now unregister from FDSet */
     if (set != NULL)
         fdset_unregister(set, fd);
+
+    /* ok we are not in callback anymore, destroy data if any */
+    if (data != NULL && destroyer != NULL)
+        destroyer(data);
 }
 
 int conn_wait(Connection *conn, double seconds)

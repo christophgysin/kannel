@@ -1,7 +1,7 @@
 /* ==================================================================== 
  * The Kannel Software License, Version 1.0 
  * 
- * Copyright (c) 2001-2005 Kannel Group  
+ * Copyright (c) 2001-2009 Kannel Group  
  * Copyright (c) 1998-2001 WapIT Ltd.   
  * All rights reserved. 
  * 
@@ -141,6 +141,7 @@ void wsp_pack_integer_value(Octstr *packed, unsigned long integer);
 int wsp_pack_date(Octstr *packet, Octstr *value);
 int wsp_pack_retry_after(Octstr *packet, Octstr *value);
 int wsp_pack_text(Octstr *packet, Octstr *value);
+int wsp_pack_quoted_text(Octstr *packed, Octstr *text);
 int wsp_pack_integer_string(Octstr *packet, Octstr *value);
 int wsp_pack_version_value(Octstr *packet, Octstr *value);
 int wsp_pack_constrained_value(Octstr *packed, Octstr *text, long value);

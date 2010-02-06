@@ -1,7 +1,7 @@
 /* ==================================================================== 
  * The Kannel Software License, Version 1.0 
  * 
- * Copyright (c) 2001-2005 Kannel Group  
+ * Copyright (c) 2001-2009 Kannel Group  
  * Copyright (c) 1998-2001 WapIT Ltd.   
  * All rights reserved. 
  * 
@@ -645,6 +645,7 @@ static void add_msisdn(List *headers, WAPAddrTuple *addr_tuple,
  * 'X-WAP-Profile', 'X-WAP-Profile-Diff' according to WAP-248-UAProf-20011020-a,
  * section 9.2.3.3.
  */
+/*
 static void map_uaprof_headers(List *headers) 
 {
     Octstr *os;
@@ -658,6 +659,7 @@ static void map_uaprof_headers(List *headers)
     octstr_destroy(os);
     octstr_destroy(version);
 }
+*/
 
 
 /* XXX DAVI: Disabled in cvs revision 1.81 for Opengroup tests
@@ -1356,7 +1358,7 @@ static Octstr *convert_wmlscript_to_wmlscriptc(struct content *content)
     }
     
     result = ws_compile_data(compiler, octstr_get_cstr(content->url),
-                             octstr_get_cstr(content->body),
+                             (unsigned char *)octstr_get_cstr(content->body),
                              octstr_len(content->body),
                              &result_data, &result_size);
     if (result != WS_OK) {
@@ -1364,7 +1366,7 @@ static Octstr *convert_wmlscript_to_wmlscriptc(struct content *content)
                 ws_result_to_string(result));
         wmlscriptc = NULL;
     } else {
-        wmlscriptc = octstr_create_from_data(result_data, result_size);
+        wmlscriptc = octstr_create_from_data((char *)result_data, result_size);
     }
     
     return wmlscriptc;
@@ -1486,7 +1488,7 @@ static void check_application_headers(List **headers,
         /* Greatest value reserved by WINA is 0xFF00 0000*/
         coded_value = octstr_get_cstr(coded_octstr);
         if (coded_value != NULL)
-	   appid_value = wsp_application_id_to_cstr((long) coded_value);
+	   appid_value = (char *)wsp_application_id_to_cstr((long) coded_value);
 
         if (appid_value != NULL && coded_value != NULL)
             http_header_add(*application_headers, "Accept-Application", 
@@ -1548,7 +1550,7 @@ static void decode_bearer_indication(List **headers, List **bearer_headers)
 
     /* Greatest assigned number for a bearer type is 0xff, see wdp, appendix C */
     coded_value = octstr_get_char(coded_octstr, 0);
-    value = wsp_bearer_indication_to_cstr(coded_value);
+    value = (char *)wsp_bearer_indication_to_cstr(coded_value);
 
     if (value != NULL && coded_value != 0) {
        http_header_add(*bearer_headers, "Bearer-Indication", value);

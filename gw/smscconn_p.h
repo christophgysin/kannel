@@ -1,7 +1,7 @@
 /* ==================================================================== 
  * The Kannel Software License, Version 1.0 
  * 
- * Copyright (c) 2001-2005 Kannel Group  
+ * Copyright (c) 2001-2009 Kannel Group  
  * Copyright (c) 1998-2001 WapIT Ltd.   
  * All rights reserved. 
  * 
@@ -202,6 +202,7 @@ struct smscconn {
     Octstr *reroute_to_smsc;    /* define a smsc-id to reroute to */
     int reroute_dlr;            /* should DLR's are rereouted too? */
 
+    long max_sms_octets; /* max allowed octets for this SMSC */
 
     /* XXX: move rest global data from Smsc here
      */

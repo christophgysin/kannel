@@ -1,7 +1,7 @@
 /* ==================================================================== 
  * The Kannel Software License, Version 1.0 
  * 
- * Copyright (c) 2001-2005 Kannel Group  
+ * Copyright (c) 2001-2009 Kannel Group  
  * Copyright (c) 1998-2001 WapIT Ltd.   
  * All rights reserved. 
  * 
@@ -132,34 +132,52 @@
 
 
 /*
- * Well-known return values from HTTP servers. This is not a complete
- * list, but it includes the values that Kannel needs to handle
- * specially.
+ * Well-known return values from HTTP servers. This is a complete
+ * list as defined by the W3C in RFC 2616, section 10.4.3.
  */
 
 enum {
-    HTTP_OK                        = 200,
-    HTTP_CREATED                   = 201,
-    HTTP_ACCEPTED                  = 202,
-    HTTP_NO_CONTENT                = 204,
-    HTTP_RESET_CONTENT             = 205,
-    HTTP_MOVED_PERMANENTLY         = 301,
-    HTTP_FOUND                     = 302,
-    HTTP_SEE_OTHER                 = 303,
-    HTTP_NOT_MODIFIED              = 304,
-    HTTP_TEMPORARY_REDIRECT        = 307,
-    HTTP_BAD_REQUEST               = 400,
-    HTTP_UNAUTHORIZED              = 401,
-    HTTP_FORBIDDEN                 = 403,
-    HTTP_NOT_FOUND                 = 404,
-    HTTP_BAD_METHOD                = 405,
-    HTTP_NOT_ACCEPTABLE            = 406,
-    HTTP_REQUEST_ENTITY_TOO_LARGE  = 413,
-    HTTP_UNSUPPORTED_MEDIA_TYPE    = 415,
-    HTTP_INTERNAL_SERVER_ERROR     = 500,
-    HTTP_NOT_IMPLEMENTED           = 501,
-    HTTP_BAD_GATEWAY               = 502,
-    HTTP_SERVICE_UNAVAILABLE       = 503
+    HTTP_CONTINUE                           = 100,
+    HTTP_SWITCHING_PROTOCOLS                = 101,
+    HTTP_OK                                 = 200,
+    HTTP_CREATED                            = 201,
+    HTTP_ACCEPTED                           = 202,
+    HTTP_NON_AUTHORATIVE_INFORMATION        = 203,
+    HTTP_NO_CONTENT                         = 204,
+    HTTP_RESET_CONTENT                      = 205,
+    HTTP_PARTIAL_CONTENT                    = 206,
+    HTTP_MULTIPLE_CHOICES                   = 300,
+    HTTP_MOVED_PERMANENTLY                  = 301,
+    HTTP_FOUND                              = 302,
+    HTTP_SEE_OTHER                          = 303,
+    HTTP_NOT_MODIFIED                       = 304,
+    HTTP_USE_PROXY                          = 305,
+    /* HTTP 306 is not used and reserved */
+    HTTP_TEMPORARY_REDIRECT                 = 307,
+    HTTP_BAD_REQUEST                        = 400,
+    HTTP_UNAUTHORIZED                       = 401,
+    HTTP_PAYMENT_REQUIRED                   = 402,
+    HTTP_FORBIDDEN                          = 403,
+    HTTP_NOT_FOUND                          = 404,
+    HTTP_BAD_METHOD                         = 405,
+    HTTP_NOT_ACCEPTABLE                     = 406,
+    HTTP_PROXY_AUTHENTICATION_REQUIRED      = 407,
+    HTTP_REQUEST_TIMEOUT                    = 408,
+    HTTP_CONFLICT                           = 409,
+    HTTP_GONE                               = 410,
+    HTTP_LENGTH_REQUIRED                    = 411,
+    HTTP_PRECONDITION_FAILED                = 412,
+    HTTP_REQUEST_ENTITY_TOO_LARGE           = 413,
+    HTTP_REQUEST_URI_TOO_LARGE              = 414,
+    HTTP_UNSUPPORTED_MEDIA_TYPE             = 415,
+    HTTP_REQUESTED_RANGE_NOT_SATISFIABLE    = 416,
+    HTTP_EXPECTATION_FAILED                 = 417,
+    HTTP_INTERNAL_SERVER_ERROR              = 500,
+    HTTP_NOT_IMPLEMENTED                    = 501,
+    HTTP_BAD_GATEWAY                        = 502,
+    HTTP_SERVICE_UNAVAILABLE                = 503,
+    HTTP_GATEWAY_TIMEOUT                    = 504,
+    HTTP_HTTP_VERSION_NOT_SUPPORTED         = 505
 };
 
 /*
@@ -264,7 +282,7 @@ void parse_dump(HTTPURLParse *p);
  * http_close_proxy closes the current proxy connection, after any
  * pending requests have been served.
  */
-void http_use_proxy(Octstr *hostname, int port, List *exceptions,
+void http_use_proxy(Octstr *hostname, int port, int ssl, List *exceptions,
     	    	    Octstr *username, Octstr *password, Octstr *exceptions_regex);
 void http_close_proxy(void);
 
@@ -277,6 +295,12 @@ void http_close_proxy(void);
  * Define interface from which all http requestes will be served
  */
 void http_set_interface(const Octstr *our_host);
+
+/**
+ * Define timeout in seconds for which HTTP clint will wait for
+ * response. Set -1 to disable timeouts.
+ */
+void http_set_client_timeout(long timeout);
 
 /*
  * Functions for doing a GET request. The difference is that _real follows
@@ -357,7 +381,7 @@ void *http_receive_result_real(HTTPCaller *caller, int *status, Octstr **final_u
 
 /* old compatibility mode, always blocking */
 #define http_receive_result(caller, status, final_url, headers, body) \
-    http_receive_result_real(caller, status, final_url, headers, body, 1);
+    http_receive_result_real(caller, status, final_url, headers, body, 1)
 
 /***********************************************************************
  * HTTP server interface.
@@ -579,6 +603,11 @@ void http_header_dump(List *headers);
  * list.
  */
 void http_cgivar_dump(List *cgiargs);
+
+/*
+ * As above function except that dump appended to Octstr.
+ */
+void http_cgivar_dump_into(List *cgiargs, Octstr *os);
 
 /*
  * Check if the passed charset is in the 'Accept-Charset' header list

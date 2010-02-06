@@ -1,7 +1,7 @@
 /* ==================================================================== 
  * The Kannel Software License, Version 1.0 
  * 
- * Copyright (c) 2001-2005 Kannel Group  
+ * Copyright (c) 2001-2009 Kannel Group  
  * Copyright (c) 1998-2001 WapIT Ltd.   
  * All rights reserved. 
  * 
@@ -63,6 +63,7 @@
 #include "gwlib/gwlib.h"
 #include "msg.h"
 #include "smscconn.h"
+#include "bb_store.h"
 
 
 /* general bearerbox state */
@@ -154,12 +155,18 @@ int smsc2_shutdown(void);
 void smsc2_cleanup(void); /* final clean-up */
 
 Octstr *smsc2_status(int status_type);
-/* Route message to SMSC. If finds a good one, puts into it and returns 1
- * If finds only bad ones, but acceptable, queues and returns 0
- * (like all acceptable currently disconnected)
- * If cannot find nothing at all, returns -1 and message is NOT destroyed
- * (otherwise it is) */
-int smsc2_rout(Msg *msg);
+
+/* function to route outgoing SMS'es
+ *
+ * If finds a good one, puts into it and returns SMSCCONN_SUCCESS
+ * If finds only bad ones, but acceptable, queues and
+ *  returns SMSCCONN_QUEUED  (like all acceptable currently disconnected)
+ * if message acceptable but queues full returns SMSCCONN_FAILED_QFULL and
+ * message is not destroyed.
+ * If cannot find nothing at all, returns SMSCCONN_FAILED_DISCARDED and
+ * message is NOT destroyed (otherwise it is)
+ */
+long smsc2_rout(Msg *msg, int resend);
 
 int smsc2_stop_smsc(Octstr *id);   /* shutdown a specific smsc */
 int smsc2_restart_smsc(Octstr *id);  /* re-start a specific smsc */
@@ -172,48 +179,6 @@ int smsc2_restart_smsc(Octstr *id);  /* re-start a specific smsc */
 int httpadmin_start(Cfg *config);
 /* int http_restart(Cfg *config); */
 void httpadmin_stop(void);
-
-
-/*-----------------
- * bb_store.c (SMS storing/retrieval functions)
- */
-
-/* return number of SMS messages in current store (file) */
-long store_messages(void);
-
-/* assign ID and save given message to store. Return -1 if save failed */
-int store_save(Msg *msg);
-
-/*
- * Store ack/nack to the store file for a given message with a given status.
- * @return: -1 if save failed ; 0 otherwise.
- */
-int store_save_ack(Msg *msg, ack_status_t status);
-
-/* load store from file; delete any messages that have been relayed,
- * and create a new store file from remaining. Calling this function
- * might take a while, depending on store size
- * Return -1 if something fails (bb can then PANIC normally)
- */
-int store_load(void(*receive_msg)(Msg*));
-
-/* dump currently non-acknowledged messages into file. This is done
- * automatically now and then, but can be forced. Return -1 if file
- * problems
- */
-int store_dump(void);
-
-/* initialize system. Return -1 if fname is baad (too long), otherwise
- * load data from disk. dump_freq is preferred delay between each disk dump,
- * in seconds. */
-#define BB_STORE_DEFAULT_DUMP_FREQ 10
-int store_init(const Octstr *fname, long dump_freq);
-
-/* init shutdown (system dies when all acks have been processed) */
-void store_shutdown(void);
-
-/* return all containing messages in the current store */
-Octstr *store_status(int status_type);
 
 
 /*-----------------
@@ -244,6 +209,7 @@ int bb_restart(void);
 int bb_flush_dlr(void);
 int bb_stop_smsc(Octstr *id);
 int bb_restart_smsc(Octstr *id);
+int bb_reload_lists(void);
 
 /* return string of current status */
 Octstr *bb_print_status(int status_type);

@@ -1,7 +1,7 @@
 /* ==================================================================== 
  * The Kannel Software License, Version 1.0 
  * 
- * Copyright (c) 2001-2005 Kannel Group  
+ * Copyright (c) 2001-2009 Kannel Group  
  * Copyright (c) 1998-2001 WapIT Ltd.   
  * All rights reserved. 
  * 
@@ -173,9 +173,9 @@ Octstr *msg_pack(Msg *msg);
  * Unpack an Msg from an Octstr. Return NULL for failure, otherwise a pointer
  * to the Msg.
  */
-
 Msg *msg_unpack_real(Octstr *os, const char *file, long line, const char *func);
 #define msg_unpack(os) \
     gw_claim_area(msg_unpack_real((os), __FILE__, __LINE__, __func__))
+Msg *msg_unpack_wrapper(Octstr *os);
 
 #endif

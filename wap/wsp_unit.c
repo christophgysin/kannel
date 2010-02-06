@@ -1,7 +1,7 @@
 /* ==================================================================== 
  * The Kannel Software License, Version 1.0 
  * 
- * Copyright (c) 2001-2005 Kannel Group  
+ * Copyright (c) 2001-2009 Kannel Group  
  * Copyright (c) 1998-2001 WapIT Ltd.   
  * All rights reserved. 
  * 
@@ -278,7 +278,7 @@ static WAPEvent *pack_into_result_datagram(WAPEvent *event) {
 		return NULL;
 
 	tid = p->transaction_id;
-	octstr_insert_data(ospdu, 0, &tid, 1);
+	octstr_insert_data(ospdu, 0, (char *)&tid, 1);
 
 	datagram = wap_event_create(T_DUnitdata_Req);
 	datagram->u.T_DUnitdata_Req.addr_tuple =
@@ -315,7 +315,7 @@ static WAPEvent *pack_into_push_datagram(WAPEvent *event) {
 	    return NULL;
 
         push_id = event->u.S_Unit_Push_Req.push_id;
-	octstr_insert_data(ospdu, 0, &push_id, 1);
+	octstr_insert_data(ospdu, 0, (char *)&push_id, 1);
 
         datagram = wap_event_create(T_DUnitdata_Req);
 

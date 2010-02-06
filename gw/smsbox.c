@@ -1,7 +1,7 @@
 /* ==================================================================== 
  * The Kannel Software License, Version 1.0 
  * 
- * Copyright (c) 2001-2005 Kannel Group  
+ * Copyright (c) 2001-2009 Kannel Group  
  * Copyright (c) 1998-2001 WapIT Ltd.   
  * All rights reserved. 
  * 
@@ -87,6 +87,8 @@
 #define SENDSMS_DEFAULT_CHARS "0123456789 +-"
 
 #define O_DESTROY(a) { if(a) octstr_destroy(a); a = NULL; }
+
+#define ACCOUNT_MAX_LEN 64
 
 /* Defaults for the HTTP request queueing inside http_queue_thread */
 #define HTTP_MAX_RETRIES    0
@@ -327,12 +329,8 @@ static int send_message(URLTranslation *trans, Msg *msg)
      *  a) it's a HTTP sms-service reply: either ignore it or
      *     substitute the "empty" warning defined
      *  b) it's a sendsms HTTP interface call: leave the message empty
-     *     if at least a UDH is given.
-     *
-     * XXX this still does not cover the case when the sendsms interface is
-     * used with *no* text and udh. What should we do then?!
      */
-    if (octstr_len(msg->sms.msgdata) == 0 && octstr_len(msg->sms.udhdata) == 0) {
+    if (octstr_len(msg->sms.msgdata) == 0 && msg->sms.sms_type == mt_reply) {
         if (trans != NULL && urltrans_omit_empty(trans))
             return 0;
         else
@@ -731,8 +729,9 @@ static void get_x_kannel_from_xml(int requesttype , Octstr **type, Octstr **body
     /* smsc */
     get_tag(*body, octstr_imm("to"), &tmp, 0, 0);
     if(tmp) {
-	get_tag(tmp, octstr_imm("account"), smsc, 0, 0);
-	O_DESTROY(tmp);
+        O_DESTROY(*smsc);
+        *smsc = tmp;
+        tmp = NULL;
     }
 
     /* pid */
@@ -1475,12 +1474,21 @@ static int obey_request(Octstr **result, URLTranslation *trans, Msg *msg)
 /* XXX The first two chars are beeing eaten somewhere and
  * only sometimes - something must be ungry */
 
-#define OCTSTR_APPEND_XML(xml, tag, text)                  \
-        octstr_format_append(xml, "  \t\t<" tag ">%s</" tag ">\n", \
-            (text?octstr_get_cstr(text):""));
+#define OCTSTR_APPEND_XML(xml, tag, text) \
+        octstr_format_append(xml, "  \t\t<" tag ">%s</" tag ">\n", (text?octstr_get_cstr(text):""))
+
+#define OCTSTR_APPEND_XML_OCTSTR(xml, tag, text) \
+        do { \
+            xmlDocPtr tmp_doc = xmlNewDoc(BAD_CAST "1.0"); \
+            xmlChar *xml_escaped = NULL; \
+            if (text != NULL) xml_escaped = xmlEncodeEntitiesReentrant(tmp_doc, BAD_CAST octstr_get_cstr(text)); \
+            octstr_format_append(xml, "  \t\t<" tag ">%s</" tag ">\n", (xml_escaped != NULL ? (char*)xml_escaped : "")); \
+            if (xml_escaped != NULL) xmlFree(xml_escaped); \
+            xmlFreeDoc(tmp_doc); \
+        } while(0)
 
 #define OCTSTR_APPEND_XML_NUMBER(xml, tag, value)          \
-        octstr_format_append(xml, "  \t\t<" tag ">%ld</" tag ">\n", (long) value);
+        octstr_format_append(xml, "  \t\t<" tag ">%ld</" tag ">\n", (long) value)
 
 	request_headers = http_create_empty_headers();
 	http_header_add(request_headers, "User-Agent", GW_NAME "/" GW_VERSION);
@@ -1523,14 +1531,14 @@ static int obey_request(Octstr **result, URLTranslation *trans, Msg *msg)
 	/* oa */
 	if(urltrans_send_sender(trans)) {
 	    tmp = octstr_create("");
-	    OCTSTR_APPEND_XML(tmp, "number", msg->sms.receiver);
+	    OCTSTR_APPEND_XML_OCTSTR(tmp, "number", msg->sms.receiver);
 	    OCTSTR_APPEND_XML(xml, "oa", tmp);
 	    octstr_destroy(tmp);
 	}
 
 	/* da */
 	tmp = octstr_create("");
-	OCTSTR_APPEND_XML(tmp, "number", msg->sms.sender);
+	OCTSTR_APPEND_XML_OCTSTR(tmp, "number", msg->sms.sender);
 	OCTSTR_APPEND_XML(xml, "da", tmp);
 	octstr_destroy(tmp);
 
@@ -1539,15 +1547,15 @@ static int obey_request(Octstr **result, URLTranslation *trans, Msg *msg)
 	    Octstr *t;
 	    t = octstr_duplicate(msg->sms.udhdata);
 	    octstr_url_encode(t);
-	    OCTSTR_APPEND_XML(xml, "udh", t);
+	    OCTSTR_APPEND_XML_OCTSTR(xml, "udh", t);
 	    octstr_destroy(t);
 	}
 
 	/* ud */
 	if(octstr_len(msg->sms.msgdata)) {
-	    octstr_url_encode(msg->sms.msgdata);
-            OCTSTR_APPEND_XML(xml, "ud", msg->sms.msgdata);
-        }
+        octstr_url_encode(msg->sms.msgdata);
+        OCTSTR_APPEND_XML_OCTSTR(xml, "ud", msg->sms.msgdata);
+    }
 
 	/* pid */
 	if(msg->sms.pid != SMS_PARAM_UNDEFINED)
@@ -1570,7 +1578,7 @@ static int obey_request(Octstr **result, URLTranslation *trans, Msg *msg)
 	if(msg->sms.compress != SMS_PARAM_UNDEFINED)
 	    OCTSTR_APPEND_XML_NUMBER(tmp, "compress", msg->sms.compress);
 	if(octstr_len(tmp))
-	    OCTSTR_APPEND_XML(xml, "dcs", tmp)
+	    OCTSTR_APPEND_XML(xml, "dcs", tmp);
 	octstr_destroy(tmp);
 
 	/* deferred (timing/delay) */
@@ -1578,7 +1586,7 @@ static int obey_request(Octstr **result, URLTranslation *trans, Msg *msg)
 	if(msg->sms.deferred != SMS_PARAM_UNDEFINED)
 	    OCTSTR_APPEND_XML_NUMBER(tmp, "delay", msg->sms.deferred);
 	if(octstr_len(tmp))
-	    OCTSTR_APPEND_XML(xml, "timing", tmp)
+	    OCTSTR_APPEND_XML(xml, "timing", tmp);
 	octstr_destroy(tmp);
 
 	/* validity (vp/delay) */
@@ -1586,7 +1594,7 @@ static int obey_request(Octstr **result, URLTranslation *trans, Msg *msg)
 	if(msg->sms.validity != SMS_PARAM_UNDEFINED)
 	    OCTSTR_APPEND_XML_NUMBER(tmp, "delay", msg->sms.validity);
 	if(octstr_len(tmp))
-	    OCTSTR_APPEND_XML(xml, "vp", tmp)
+	    OCTSTR_APPEND_XML(xml, "vp", tmp);
 	octstr_destroy(tmp);
 
 	/* time (at) */
@@ -1603,18 +1611,18 @@ static int obey_request(Octstr **result, URLTranslation *trans, Msg *msg)
 	if (octstr_len(msg->sms.smsc_id)) {
 	    tmp = octstr_create("");
 	    if(octstr_len(msg->sms.smsc_id))
-		OCTSTR_APPEND_XML(tmp, "account", msg->sms.smsc_id);
+            OCTSTR_APPEND_XML_OCTSTR(tmp, "account", msg->sms.smsc_id);
 	    if(octstr_len(tmp))
-		OCTSTR_APPEND_XML(xml, "from", tmp);
+            OCTSTR_APPEND_XML(xml, "from", tmp);
 	    O_DESTROY(tmp);
 	}
 
 	/* service = to/service */
 	if(octstr_len(msg->sms.service)) {
 	    tmp = octstr_create("");
-	    OCTSTR_APPEND_XML(tmp, "service", msg->sms.service);
+	    OCTSTR_APPEND_XML_OCTSTR(tmp, "service", msg->sms.service);
 	    if(octstr_len(tmp))
-		OCTSTR_APPEND_XML(xml, "to", tmp);
+            OCTSTR_APPEND_XML(xml, "to", tmp);
 	    O_DESTROY(tmp);
 	}
 
@@ -1671,47 +1679,19 @@ static void obey_request_thread(void *arg)
 	else
 	    dreport = 0;
 
-	/* Recode to iso-8859-1 the MO message if possible */
+	/* Recode to UTF-8 the MO message if possible */
 	if (mo_recode && msg->sms.coding == DC_UCS2) {
             int converted = 0;
 	    Octstr *text;
 
 	    text = octstr_duplicate(msg->sms.msgdata);
-	    if(0 == octstr_recode (octstr_imm("iso-8859-1"), octstr_imm("UTF-16BE"), text)) {
-            if(octstr_search(text, octstr_imm("&#"), 0) == -1) {
-                /* XXX I'm trying to search for &#xxxx; text, which indicates that the
-                 * text couldn't be recoded.
-                 * We should use other function to do the recode or detect it using
-                 * other method */
-                info(0, "MO message converted from UCS-2 to ISO-8859-1");
-                octstr_destroy(msg->sms.msgdata);
-                msg->sms.msgdata = octstr_duplicate(text);
-                msg->sms.charset = octstr_create("ISO-8859-1");
-                msg->sms.coding = DC_7BIT;
-                converted=1;
-            } else {
-                octstr_destroy(text);
-	            text = octstr_duplicate(msg->sms.msgdata);
-            }
-	    }
-	    if(!converted && 0 == octstr_recode (octstr_imm("UTF-8"), octstr_imm("UTF-16BE"), text)) {
-            if(octstr_search(text, octstr_imm("&#"), 0) == -1) {
-                /* XXX I'm trying to search for &#xxxx; text, which indicates that the
-                 * text couldn't be recoded.
-                 * We should use other function to do the recode or detect it using
-                 * other method */
+	    if(0 == octstr_recode(octstr_imm("UTF-8"), octstr_imm("UTF-16BE"), text)) {
                 info(0, "MO message converted from UCS-2 to UTF-8");
                 octstr_destroy(msg->sms.msgdata);
                 msg->sms.msgdata = octstr_duplicate(text);
                 msg->sms.charset = octstr_create("UTF-8");
                 msg->sms.coding = DC_7BIT;
-            /* redundant, but this code could be used if another convertion is required
                 converted=1;
-            } else {
-                octstr_destroy(text);
-	            text = octstr_duplicate(msg->sms.msgdata);
-            */
-            }
 	    }
 	    octstr_destroy(text);
 	}
@@ -1757,8 +1737,7 @@ static void obey_request_thread(void *arg)
 		octstr_get_cstr(msg->sms.sender));
 
 	} else {
-	    trans = urltrans_find(translations, msg->sms.msgdata,
-	    	    	      msg->sms.smsc_id, msg->sms.sender, msg->sms.receiver);
+	    trans = urltrans_find(translations, msg);
 	    if (trans == NULL) {
 		warning(0, "No translation found for <%s> from <%s> to <%s>",
 		    octstr_get_cstr(msg->sms.msgdata),
@@ -2172,11 +2151,11 @@ static Octstr *smsbox_req_handle(URLTranslation *t, Octstr *client_ip,
     msg->sms.sms_type = mt_push;
     msg->sms.sender = octstr_duplicate(newfrom);
     if(octstr_len(account)) {
-	if(octstr_len(account) <= 32 && 
+	if(octstr_len(account) <= ACCOUNT_MAX_LEN && 
 	   octstr_search_chars(account, octstr_imm("[]\n\r"), 0) == -1) {
 	    msg->sms.account = account ? octstr_duplicate(account) : NULL;
 	} else {
-	    returnerror = octstr_create("Account field misformed, rejected");
+	    returnerror = octstr_create("Account field misformed or too long, rejected");
 	    goto field_error;
 	}
     }
@@ -3331,6 +3310,7 @@ static Cfg *init_smsbox(Cfg *cfg)
     long lvl;
     Octstr *http_proxy_host = NULL;
     long http_proxy_port = -1;
+    int http_proxy_ssl = 0;
     List *http_proxy_exceptions = NULL;
     Octstr *http_proxy_username = NULL;
     Octstr *http_proxy_password = NULL;
@@ -3359,6 +3339,9 @@ static Cfg *init_smsbox(Cfg *cfg)
 #endif /* HAVE_LIBSSL */
 
     cfg_get_integer(&http_proxy_port, grp, octstr_imm("http-proxy-port"));
+#ifdef HAVE_LIBSSL
+    cfg_get_bool(&http_proxy_ssl, grp, octstr_imm("http-proxy-ssl"));
+#endif /* HAVE_LIBSSL */
 
     http_proxy_host = cfg_get(grp, 
     	    	    	octstr_imm("http-proxy-host"));
@@ -3533,7 +3516,7 @@ static Cfg *init_smsbox(Cfg *cfg)
     }
 
     if (http_proxy_host != NULL && http_proxy_port > 0) {
-    	http_use_proxy(http_proxy_host, http_proxy_port,
+    	http_use_proxy(http_proxy_host, http_proxy_port, http_proxy_ssl,
 		       http_proxy_exceptions, http_proxy_username,
                        http_proxy_password, http_proxy_exceptions_regex);
     }
@@ -3701,14 +3684,14 @@ int charset_processing (Octstr *charset, Octstr *body, int coding) {
 	    /*
          * For 7 bit, convert to WINDOWS-1252
 	     */
-        if (charset_convert (body, octstr_get_cstr(charset), "WINDOWS-1252") < 0) {
+        if (charset_convert(body, octstr_get_cstr(charset), "UTF-8") < 0) {
 		resultcode = -1;
 	    }
 	} else if (coding == DC_UCS2) {
 	    /*
 	     * For UCS-2, convert to UTF-16BE
 	     */
-	    if (octstr_recode (octstr_imm ("UTF-16BE"), charset, body) < 0) {
+	    if (charset_convert(body, octstr_get_cstr(charset), "UTF-16BE") < 0) {
 		resultcode = -1;
 	    }
 	}

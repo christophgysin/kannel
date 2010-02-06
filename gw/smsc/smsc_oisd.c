@@ -1,7 +1,7 @@
 /* ==================================================================== 
  * The Kannel Software License, Version 1.0 
  * 
- * Copyright (c) 2001-2005 Kannel Group  
+ * Copyright (c) 2001-2009 Kannel Group  
  * Copyright (c) 1998-2001 WapIT Ltd.   
  * All rights reserved. 
  * 
@@ -138,7 +138,7 @@ static int isphonedigit(int c)
     return isdigit(c) || c == '+' || c == '-';
 }
 
-static const int parm_valid_address(Octstr *value)
+static int parm_valid_address(Octstr *value)
 {
     return octstr_check_range(value, 0, octstr_len(value), isphonedigit);
 }
@@ -149,12 +149,12 @@ static const int parm_valid_address(Octstr *value)
 
 static int operation_find(int operation);
 static Octstr *operation_name(int operation);
-static const int operation_can_send(int operation);
-static const int operation_can_receive(int operation);
+static int operation_can_send(int operation);
+static int operation_can_receive(int operation);
 
 static const struct
 {
-    unsigned char *name;
+    char *name;
     int code;
     int can_send;
     int can_receive;
@@ -203,7 +203,7 @@ static Octstr *operation_name(int operation)
 }
 
 /* Return true if a OISD client may send this operation */
-static const int operation_can_send(int operation)
+static int operation_can_send(int operation)
 {
     int i = operation_find(operation);
 
@@ -219,7 +219,7 @@ static const int operation_can_send(int operation)
 
 
 /* Return true if a OISD server may send this operation */
-static const int operation_can_receive(int operation)
+static int operation_can_receive(int operation)
 {
     int i = operation_find(operation);
 
@@ -469,7 +469,7 @@ static struct packet *packet_create(int operation, unsigned long opref)
     header[8] = 0;
     header[9] = 0;
 
-    packet->data = octstr_create_from_data(header, 10);
+    packet->data = octstr_create_from_data((char *)header, 10);
 
     return packet;
 }
@@ -657,10 +657,10 @@ static struct packet *packet_encode_message(Msg *msg, SMSCConn *conn)
     msgdata = octstr_duplicate(msg->sms.msgdata);
 
     if (msg->sms.coding == DC_7BIT || msg->sms.coding == DC_UNDEF) {
-        debug("bb.sms.oisd", 0, "OISD[%s]: sending latin1=%s",
+        debug("bb.sms.oisd", 0, "OISD[%s]: sending UTF-8=%s",
               octstr_get_cstr(conn->id),
               octstr_get_cstr(msg->sms.msgdata));
-        charset_latin1_to_gsm(msgdata);
+        charset_utf8_to_gsm(msgdata);
         oisd_shrink_gsm7(msgdata);
     }
 
@@ -850,8 +850,8 @@ static Msg *oisd_accept_message(struct packet *request, SMSCConn *conn)
             warning(0, "OISD[%s]: 7-bit UDH ?",
                     octstr_get_cstr(conn->id));
         } else {
-            charset_gsm_to_latin1(msg->sms.msgdata);
-            debug("bb.sms.oisd", 0, "OISD[%s]: received latin1=%s",
+            charset_gsm_to_utf8(msg->sms.msgdata);
+            debug("bb.sms.oisd", 0, "OISD[%s]: received UTF-8=%s",
                   octstr_get_cstr(conn->id),
                   octstr_get_cstr(msg->sms.msgdata));
         }

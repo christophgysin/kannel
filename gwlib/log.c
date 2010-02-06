@@ -1,7 +1,7 @@
 /* ==================================================================== 
  * The Kannel Software License, Version 1.0 
  * 
- * Copyright (c) 2001-2005 Kannel Group  
+ * Copyright (c) 2001-2009 Kannel Group  
  * Copyright (c) 1998-2001 WapIT Ltd.   
  * All rights reserved. 
  * 
@@ -138,7 +138,7 @@ static int num_places = 0;
 /*
  * Reopen/rotate locking things.
  */
-static List *writers = NULL;
+static RWLock rwlock;
 
 /*
  * Syslog support.
@@ -168,24 +168,22 @@ void log_init(void)
 {
     unsigned long i;
 
+    /* Initialize rwlock */
+    gw_rwlock_init_static(&rwlock);
+
     /* default all possible thread to logging index 0, stderr */
     for (i = 0; i <= THREADTABLE_SIZE; i++) {
         thread_to[i] = 0;
     }
 
     add_stderr();
-
-    /* initialize rw lock */
-    if (writers == NULL);
-        writers = gwlist_create();
 }
 
 void log_shutdown(void)
 {
     log_close_all();
-    if (writers != NULL)
-        gwlist_destroy(writers, NULL);
-    writers = NULL;
+    /* destroy rwlock */
+    gw_rwlock_destroy(&rwlock);
 }
 
 
@@ -235,11 +233,7 @@ void log_reopen(void)
     /*
      * Writer lock.
      */
-    if (writers != NULL) {
-        gwlist_lock(writers);
-        /* wait for writers complete */
-        gwlist_consume(writers);
-    }
+    gw_rwlock_wrlock(&rwlock);
 
     for (i = 0; i < num_logfiles; ++i) {
         if (logfiles[i].file != stderr) {
@@ -272,8 +266,7 @@ void log_reopen(void)
     /*
      * Unlock writer.
      */
-    if (writers != NULL)
-        gwlist_unlock(writers);
+    gw_rwlock_unlock(&rwlock);
 }
 
 
@@ -282,25 +275,26 @@ void log_close_all(void)
     /*
      * Writer lock.
      */
-    if (writers != NULL) {
-        gwlist_lock(writers);
-        /* wait for writers */
-        gwlist_consume(writers);
-    }
+    gw_rwlock_wrlock(&rwlock);
 
     while (num_logfiles > 0) {
         --num_logfiles;
-        if (logfiles[num_logfiles].file != stderr &&
-            logfiles[num_logfiles].file != NULL)
+        if (logfiles[num_logfiles].file != stderr && logfiles[num_logfiles].file != NULL) {
+            int i;
+            /* look for the same filename and set file to NULL */
+            for (i = num_logfiles - 1; i >= 0; i--) {
+                if (strcmp(logfiles[num_logfiles].filename, logfiles[i].filename) == 0)
+                    logfiles[i].file = NULL;
+            }
             fclose(logfiles[num_logfiles].file);
-        logfiles[num_logfiles].file = NULL;
+            logfiles[num_logfiles].file = NULL;
+        }
     }
 
     /*
      * Unlock writer.
      */
-    if (writers != NULL)
-        gwlist_unlock(writers);
+    gw_rwlock_unlock(&rwlock);
 
     /* close syslog if used */
     if (dosyslog) {
@@ -315,16 +309,17 @@ int log_open(char *filename, int level, enum excl_state excl)
     FILE *f = NULL;
     int i;
     
-    if (writers == NULL)
-        writers = gwlist_create();
+    gw_rwlock_wrlock(&rwlock);
 
     if (num_logfiles == MAX_LOGFILES) {
+        gw_rwlock_unlock(&rwlock);
         error(0, "Too many log files already open, not adding `%s'",
               filename);
         return -1;
     }
 
     if (strlen(filename) > FILENAME_MAX) {
+        gw_rwlock_unlock(&rwlock);
         error(0, "Log filename too long: `%s'.", filename);
         return -1;
     }
@@ -343,6 +338,7 @@ int log_open(char *filename, int level, enum excl_state excl)
     if (f == NULL) {
         f = fopen(filename, "a");
         if (f == NULL) {
+            gw_rwlock_unlock(&rwlock);
             error(errno, "Couldn't open logfile `%s'.", filename);
             return -1;
         }
@@ -353,9 +349,12 @@ int log_open(char *filename, int level, enum excl_state excl)
     logfiles[num_logfiles].exclusive = excl;
     strcpy(logfiles[num_logfiles].filename, filename);
     ++num_logfiles;
+    i = num_logfiles - 1;
+    gw_rwlock_unlock(&rwlock);
+
     info(0, "Added logfile `%s' with level `%d'.", filename, level);
 
-    return (num_logfiles - 1);
+    return i;
 }
 
 
@@ -481,11 +480,7 @@ static void PRINTFLIKE(1,0) kannel_syslog(char *format, va_list args, int level)
 	    va_list args; \
 	    \
 	    format(buf, level, place, err, fmt, 1); \
-            if (writers != NULL) { \
-                gwlist_lock(writers); \
-                gwlist_add_producer(writers); \
-                gwlist_unlock(writers); \
-            } \
+            gw_rwlock_rdlock(&rwlock); \
 	    for (i = 0; i < num_logfiles; ++i) { \
 		if (logfiles[i].exclusive == GW_NON_EXCL && \
                     level >= logfiles[i].minimum_output_level && \
@@ -495,8 +490,7 @@ static void PRINTFLIKE(1,0) kannel_syslog(char *format, va_list args, int level)
 		        va_end(args); \
 		} \
 	    } \
-            if (writers != NULL) \
-                gwlist_remove_producer(writers); \
+            gw_rwlock_unlock(&rwlock); \
 	    if (dosyslog) { \
 	        format(buf, level, place, err, fmt, 0); \
 		va_start(args, fmt); \
@@ -511,11 +505,7 @@ static void PRINTFLIKE(1,0) kannel_syslog(char *format, va_list args, int level)
 	    va_list args; \
 	    \
 	    format(buf, level, place, err, fmt, 1); \
-            if (writers != NULL) { \
-                gwlist_lock(writers); \
-                gwlist_add_producer(writers); \
-                gwlist_unlock(writers); \
-            } \
+            gw_rwlock_rdlock(&rwlock); \
             if (logfiles[e].exclusive == GW_EXCL && \
                 level >= logfiles[e].minimum_output_level && \
                 logfiles[e].file != NULL) { \
@@ -523,15 +513,16 @@ static void PRINTFLIKE(1,0) kannel_syslog(char *format, va_list args, int level)
                 output(logfiles[e].file, buf, args); \
                 va_end(args); \
             } \
-            if (writers != NULL) \
-              gwlist_remove_producer(writers); \
+            gw_rwlock_unlock(&rwlock); \
 	} while (0)
 
 
+#ifdef HAVE_BACKTRACE
 static void PRINTFLIKE(2,3) gw_panic_output(int err, const char *fmt, ...)
 {
     FUNCTION_GUTS(GW_PANIC, "");
 }
+#endif
 
 void gw_panic(int err, const char *fmt, ...)
 {

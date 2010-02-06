@@ -1,7 +1,7 @@
 /* ==================================================================== 
  * The Kannel Software License, Version 1.0 
  * 
- * Copyright (c) 2001-2005 Kannel Group  
+ * Copyright (c) 2001-2009 Kannel Group  
  * Copyright (c) 1998-2001 WapIT Ltd.   
  * All rights reserved. 
  * 
@@ -90,6 +90,7 @@
 #include <string.h>
 #include <unistd.h>
 #include <stdlib.h>
+#include <errno.h>
 
 #include "gwassert.h"
 #include "list.h"
@@ -217,9 +218,8 @@ void gwlist_insert(List *list, long pos, void *item)
 
     make_bigger(list, 1);
     for (i = list->len; i > pos; --i)
-        list->tab[(list->start + i) % list->tab_size] =
-            list->tab[(list->start + i - 1) % list->tab_size];
-    list->tab[(list->start + pos) % list->tab_size] = item;
+        list->tab[INDEX(list, i)] = GET(list, i - 1);
+    list->tab[INDEX(list, pos)] = item;
     ++list->len;
     pthread_cond_signal(&list->nonempty);
     unlock(list);
@@ -431,6 +431,35 @@ void *gwlist_consume(List *list)
 }
 
 
+void *gwlist_timed_consume(List *list, long sec)
+{
+    void *item;
+    struct timespec abstime;
+    int rc;
+
+    abstime.tv_sec = time(NULL) + sec;
+    abstime.tv_nsec = 0;
+
+    lock(list);
+    while (list->len == 0 && list->num_producers > 0) {
+        list->single_operation_lock->owner = -1;
+        rc = pthread_cond_timedwait(&list->nonempty,
+                          &list->single_operation_lock->mutex, &abstime);
+        list->single_operation_lock->owner = gwthread_self();
+        if (rc == ETIMEDOUT)
+            break;
+    }
+    if (list->len > 0) {
+        item = GET(list, 0);
+        delete_items_from_list(list, 0, 1);
+    } else {
+        item = NULL;
+    }
+    unlock(list);
+    return item;
+}
+
+
 void *gwlist_search(List *list, void *pattern, int (*cmp)(void *, void *))
 {
     void *item;
@@ -484,14 +513,14 @@ void gwlist_sort(List *list, int(*cmp)(const void *, const void *))
 {
     gw_assert(list != NULL && cmp != NULL);
 
-    gwlist_lock(list);
+    lock(list);
     if (list->len == 0) {
         /* nothing to sort */
-        gwlist_unlock(list);
+        unlock(list);
         return;
     }
     qsort(&GET(list, 0), list->len, sizeof(void*), cmp);
-    gwlist_unlock(list);
+    unlock(list);
 }
 
 

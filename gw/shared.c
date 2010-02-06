@@ -1,7 +1,7 @@
 /* ==================================================================== 
  * The Kannel Software License, Version 1.0 
  * 
- * Copyright (c) 2001-2005 Kannel Group  
+ * Copyright (c) 2001-2009 Kannel Group  
  * Copyright (c) 1998-2001 WapIT Ltd.   
  * All rights reserved. 
  * 
@@ -76,6 +76,12 @@
 #ifdef HAVE_SQLITE 
 #include <sqlite.h>
 #endif
+#ifdef HAVE_SQLITE3 
+#include <sqlite3.h>
+#endif
+#ifdef HAVE_ORACLE 
+#include <oci.h>
+#endif
 
 
 volatile enum program_status program_status = starting_up;
@@ -113,8 +119,15 @@ Octstr *version_report_string(const char *boxname)
 #ifdef HAVE_SDB
              "Using LibSDB %s.\n"
 #endif
-#ifdef HAVE_SQLITE
+#if defined(HAVE_SQLITE) || defined(HAVE_SQLITE3)
              "Using SQLite %s.\n"
+#endif
+#ifdef HAVE_ORACLE
+#if defined(OCI_MAJOR_VERSION) && defined(OCI_MINOR_VERSION)
+             "Using Oracle OCI %d.%d.\n"
+#else
+             "Using Oracle OCI.\n"
+#endif
 #endif
              "Using %s malloc.\n",
 			 boxname, GW_VERSION,
@@ -137,8 +150,13 @@ Octstr *version_report_string(const char *boxname)
 #ifdef HAVE_SDB
              LIBSDB_VERSION,
 #endif
-#ifdef HAVE_SQLITE
+#if defined(HAVE_SQLITE) || defined(HAVE_SQLITE3)
              SQLITE_VERSION,
+#endif
+#ifdef HAVE_ORACLE
+#if defined(OCI_MAJOR_VERSION) && defined(OCI_MINOR_VERSION)
+             OCI_MAJOR_VERSION, OCI_MINOR_VERSION,
+#endif
 #endif
              octstr_get_cstr(gwmem_type()));
 }

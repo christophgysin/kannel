@@ -1,7 +1,7 @@
 /* ==================================================================== 
  * The Kannel Software License, Version 1.0 
  * 
- * Copyright (c) 2001-2005 Kannel Group  
+ * Copyright (c) 2001-2009 Kannel Group  
  * Copyright (c) 1998-2001 WapIT Ltd.   
  * All rights reserved. 
  * 
@@ -87,6 +87,7 @@
 #elif defined(__GNU__)
 #define OSHURD
 #elif defined(SunOS)
+#elif defined(__CYGWIN__)
 #elif defined(__FreeBSD__) || defined(__APPLE__)
 #define FreeBSD
 #else

@@ -1,7 +1,7 @@
 /* ==================================================================== 
  * The Kannel Software License, Version 1.0 
  * 
- * Copyright (c) 2001-2005 Kannel Group  
+ * Copyright (c) 2001-2009 Kannel Group  
  * Copyright (c) 1998-2001 WapIT Ltd.   
  * All rights reserved. 
  * 
@@ -144,7 +144,7 @@ static int ota_pack_push_headers(Msg **msg, Octstr *mime_type, Octstr *sec,
     } else if (octstr_case_compare(mime_type, octstr_imm("oma-settings")) == 0) {
         Octstr *hdr = octstr_create(""), *mac; 
         unsigned char *p;
-        int mac_len;
+        unsigned int mac_len;
 #ifdef HAVE_LIBSSL
         unsigned char macbuf[EVP_MAX_MD_SIZE];
 #endif
@@ -170,14 +170,14 @@ static int ota_pack_push_headers(Msg **msg, Octstr *mime_type, Octstr *sec,
 
 #ifdef HAVE_LIBSSL
         p = HMAC(EVP_sha1(), octstr_get_cstr(pin), octstr_len(pin), 
-                 octstr_get_cstr(ota_binary), octstr_len(ota_binary), 
+                 (unsigned char *)octstr_get_cstr(ota_binary), octstr_len(ota_binary), 
                  macbuf, &mac_len);
 #else
         mac_len = 0;
         p = "";
         warning(0, "OMA ProvCont: No SSL Support, '%s' not supported!", octstr_get_cstr(mime_type));
 #endif
-        mac = octstr_create_from_data(p, mac_len);
+        mac = octstr_create_from_data((char *)p, mac_len);
         octstr_binary_to_hex(mac, 1);
     
         octstr_append(hdr, mac);
@@ -270,7 +270,7 @@ Msg *ota_tokenize_settings(CfgGroup *grp, Octstr *from, Octstr *receiver)
     username = NULL;
     passwd = NULL;
     bearer = -1;
-    calltype = -1;
+    calltype =  WBXML_TOK_VALUE_CONN_ISDN;
     connection = WBXML_TOK_VALUE_PORT_9201;
     security = 0;
     authent = WBXML_TOK_VALUE_AUTH_PAP;
@@ -289,10 +289,10 @@ Msg *ota_tokenize_settings(CfgGroup *grp, Octstr *from, Octstr *receiver)
     }
     p = cfg_get(grp, octstr_imm("calltype"));
     if (p != NULL) {
-        if (strcasecmp(octstr_get_cstr(p), "calltype") == 0)
-            calltype = WBXML_TOK_VALUE_CONN_ISDN;
+        if (strcasecmp(octstr_get_cstr(p), "analog") == 0)
+            calltype = WBXML_TOK_VALUE_CONN_ANALOGUE;
         else
-            calltype = -1;
+            calltype =  WBXML_TOK_VALUE_CONN_ISDN;
         octstr_destroy(p);
     }
 	

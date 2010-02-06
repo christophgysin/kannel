@@ -1,7 +1,7 @@
 /* ==================================================================== 
  * The Kannel Software License, Version 1.0 
  * 
- * Copyright (c) 2001-2005 Kannel Group  
+ * Copyright (c) 2001-2009 Kannel Group  
  * Copyright (c) 1998-2001 WapIT Ltd.   
  * All rights reserved. 
  * 
@@ -182,7 +182,13 @@ List *wsp_cap_unpack_list(Octstr *caps) {
 			id = -1;  /* It's encoded as token-text */
 			nullpos = octstr_search_char(caps, 0, pos);
 			if (nullpos < 0)
-				goto error;
+                            goto error;
+                        /* check length
+                         * FIXME: If it's not allowed that data is empty then change check
+                         *        to <= .
+                         */
+                        if (length < (nullpos + 1 - pos))
+                            goto error;
 			name = octstr_copy(caps, pos, nullpos - pos);
 			data = octstr_copy(caps, nullpos + 1,
 				length - (nullpos + 1 - pos));

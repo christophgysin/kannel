@@ -1,7 +1,7 @@
 /* ==================================================================== 
  * The Kannel Software License, Version 1.0 
  * 
- * Copyright (c) 2001-2005 Kannel Group  
+ * Copyright (c) 2001-2009 Kannel Group  
  * Copyright (c) 1998-2001 WapIT Ltd.   
  * All rights reserved. 
  * 
@@ -810,6 +810,7 @@ static int response(List *push_headers, Octstr **username, Octstr **password)
           " authorization header");
     gwlist_destroy(auth_list, octstr_destroy_item);
     octstr_destroy(header_value);
+    http_header_remove_all(push_headers, "Authorization");
     return HEADER_AUTHENTICATION;
 
 no_response1:
@@ -1033,7 +1034,7 @@ static int compare_octstr_sequence(Octstr *os1, Octstr *os2, long start)
     prefix = NULL;
     if (start != 0) {
         prefix = gw_malloc(start);
-        octstr_get_many_chars(prefix, os1, 0, start);
+        octstr_get_many_chars((char *)prefix, os1, 0, start);
         octstr_delete(os1, 0, start);
     }
     
@@ -1041,7 +1042,7 @@ static int compare_octstr_sequence(Octstr *os1, Octstr *os2, long start)
     ret = octstr_ncompare(os1, os2, end - start);
     
     if (start != 0) {
-        octstr_insert_data(os1, 0, prefix, start);
+        octstr_insert_data(os1, 0, (char *)prefix, start);
         gw_free(prefix);
     }
 

@@ -1,7 +1,7 @@
 /* ==================================================================== 
  * The Kannel Software License, Version 1.0 
  * 
- * Copyright (c) 2001-2005 Kannel Group  
+ * Copyright (c) 2001-2009 Kannel Group  
  * Copyright (c) 1998-2001 WapIT Ltd.   
  * All rights reserved. 
  * 
@@ -373,8 +373,8 @@ static Octstr *tell_ppg_name(void);
 static Octstr *describe_code(long code);
 static long ota_abort_to_pap(long reason);
 static int content_transformable(List *push_headers);
-static WAPAddrTuple *set_addr_tuple(Octstr *address, long cliport, 
-                                    long servport, long address_type);
+static WAPAddrTuple *set_addr_tuple(Octstr *address, long cliport, long servport,
+                                    long address_type, List *push_headers);
 static WAPAddrTuple *addr_tuple_change_cliport(WAPAddrTuple *tuple, long port);
 static void initialize_time_item_array(long time_data[], struct tm now);
 static int date_item_compare(Octstr *before, long time_data, long pos);
@@ -438,6 +438,7 @@ void wap_push_ppg_shutdown(void)
          gwlist_remove_producer(ppg_queue);
          gwlist_remove_producer(pap_queue);
          octstr_destroy(ppg_url);
+         ppg_url = NULL;
          http_close_all_ports();
          dict_destroy(http_clients);
          dict_destroy(urls);
@@ -447,6 +448,8 @@ void wap_push_ppg_shutdown(void)
          octstr_destroy(global_sender);
          octstr_destroy(service_name);
          octstr_destroy(ppg_default_smsc);
+         octstr_destroy(ppg_dlr_url);
+         octstr_destroy(ppg_smsbox_id);
 
          gwthread_join_every(http_read_thread);
 #ifdef HAVE_LIBSSL
@@ -745,17 +748,17 @@ static void pap_request_thread(void *arg)
     WAPEvent *ppg_event;
     PAPEvent *p;
     size_t push_len;
-    Octstr *pap_content,
-           *push_data,
-           *rdf_content,
-           *mime_content,
-           *plos,                      /* a temporary variable*/
-           *boundary,
-           *content_header,            /* Content-Type MIME header */
-           *url,
-           *ip,
-           *not_found,
-           *username;
+    Octstr *pap_content = NULL;
+    Octstr *push_data = NULL;
+    Octstr *rdf_content = NULL;
+    Octstr *mime_content = NULL;
+    Octstr *plos = NULL;               /* a temporary variable*/
+    Octstr *boundary = NULL;
+    Octstr *content_header = NULL;     /* Content-Type MIME header */
+    Octstr *url = NULL;
+    Octstr *ip = NULL;
+    Octstr *not_found = NULL;
+    Octstr *username = NULL;
     int compiler_status,
         http_status;
     List *push_headers,                /* MIME headers themselves */
@@ -950,6 +953,7 @@ static void pap_request_thread(void *arg)
         octstr_destroy(push_data);
         octstr_destroy(rdf_content);
         octstr_destroy(boundary);
+        boundary = rdf_content = push_data = pap_content = mime_content = username = NULL;
         continue;
 
 no_transform:
@@ -962,6 +966,7 @@ no_transform:
         octstr_destroy(push_data);
         octstr_destroy(rdf_content);
         octstr_destroy(boundary);
+        boundary = rdf_content = push_data = pap_content = mime_content = username = NULL;
         continue;
 
 no_compile:
@@ -974,6 +979,7 @@ no_compile:
         octstr_destroy(rdf_content);
         octstr_destroy(boundary);
         octstr_destroy(url);
+        url = boundary = rdf_content = push_data = mime_content = username = NULL;
         continue;
 
 not_acceptable:
@@ -987,6 +993,7 @@ not_acceptable:
         octstr_destroy(rdf_content);
         octstr_destroy(boundary);
         octstr_destroy(url);
+        url = boundary = rdf_content = push_data = pap_content = mime_content = username = NULL;
         continue;
 
 clean:
@@ -999,6 +1006,7 @@ clean:
         octstr_destroy(content_header);
         octstr_destroy(boundary);
         octstr_destroy(url);
+        url = boundary = content_header = rdf_content = push_data = pap_content = NULL;
         continue;
 
 ferror:
@@ -1009,6 +1017,7 @@ ferror:
         octstr_destroy(url);
         octstr_destroy(ip);
         octstr_destroy(mime_content);
+        mime_content = ip = url = username = NULL;
         continue;
 
 herror:
@@ -1017,6 +1026,7 @@ herror:
         http_destroy_cgiargs(cgivars);
         octstr_destroy(username);
         octstr_destroy(url);
+        url = username = NULL;
         continue;
 
 berror:
@@ -1028,6 +1038,7 @@ berror:
         octstr_destroy(content_header);
         octstr_destroy(boundary);
         octstr_destroy(url);
+        url = boundary = content_header = mime_content = username = NULL;
         continue;
     }
 }
@@ -1054,10 +1065,10 @@ static int handle_push_message(HTTPClient **c, WAPEvent *e, int status)
 
     PPGPushMachine *pm;
     PPGSessionMachine *sm;
-    WAPAddrTuple *tuple;
-    Octstr *push_data,
-           *cliaddr,
-           *type;
+    WAPAddrTuple *tuple=NULL;
+    Octstr *push_data=NULL;
+    Octstr *cliaddr=NULL;
+    Octstr *type=NULL;
 
     List *push_headers;
    
@@ -1775,7 +1786,7 @@ static int transform_message(WAPEvent **e, WAPAddrTuple **tuple,
     }
     
     address_type = (**e).u.Push_Message.address_type;
-    *tuple = set_addr_tuple(cliaddr, cliport, servport, address_type);
+    *tuple = set_addr_tuple(cliaddr, cliport, servport, address_type, push_headers);
 
     if (!content_transformable(push_headers)) 
         goto no_transform;
@@ -2759,20 +2770,26 @@ static int deliver_after_test_cleared(Octstr *after, struct tm now)
  * used for compability reasons, when the bearer is ip. When it is SMS, the
  * server address is global-sender.
  */
-static WAPAddrTuple *set_addr_tuple(Octstr *address, long cliport, 
-                                    long servport, long address_type)
+static WAPAddrTuple *set_addr_tuple(Octstr *address, long cliport, long servport, 
+                                    long address_type, List *push_headers)
 {
     Octstr *cliaddr;
+    Octstr *from = NULL;
     WAPAddrTuple *tuple;
     
     gw_assert(address);
 
-    if (address_type == ADDR_PLMN)
-        cliaddr = global_sender;
-    else
+    if (address_type == ADDR_PLMN) {
+        from = http_header_value(push_headers, octstr_imm("X-Kannel-From"));
+        cliaddr = from ? from : global_sender;
+    } else {
         cliaddr = octstr_imm("0.0.0.0");
+    }
 
     tuple = wap_addr_tuple_create(address, cliport, cliaddr, servport);
+
+    octstr_destroy(from);
+    http_header_remove_all(push_headers, "X-Kannel-From");
 
     return tuple;
 }

@@ -1,7 +1,7 @@
 /* ==================================================================== 
  * The Kannel Software License, Version 1.0 
  * 
- * Copyright (c) 2001-2005 Kannel Group  
+ * Copyright (c) 2001-2009 Kannel Group  
  * Copyright (c) 1998-2001 WapIT Ltd.   
  * All rights reserved. 
  * 
@@ -100,6 +100,8 @@ SINGLE_GROUP(core,
     OCTSTR(access-log-clean)
     OCTSTR(store-file)
     OCTSTR(store-dump-freq)
+    OCTSTR(store-type)
+    OCTSTR(store-location)
     OCTSTR(unified-prefix)
     OCTSTR(white-list)
     OCTSTR(white-list-regex)
@@ -107,6 +109,7 @@ SINGLE_GROUP(core,
     OCTSTR(black-list-regex)
     OCTSTR(http-proxy-host)
     OCTSTR(http-proxy-port)
+    OCTSTR(http-proxy-ssl)
     OCTSTR(http-proxy-exceptions)
     OCTSTR(http-proxy-exceptions-regex)
     OCTSTR(http-proxy-username)
@@ -118,8 +121,11 @@ SINGLE_GROUP(core,
     OCTSTR(dlr-storage)
     OCTSTR(maximum-queue-length)
     OCTSTR(sms-incoming-queue-limit)
+    OCTSTR(sms-outgoing-queue-limit)
     OCTSTR(sms-resend-freq)
     OCTSTR(sms-resend-retry)
+    OCTSTR(sms-combine-concatenated-mo)
+    OCTSTR(sms-combine-concatenated-mo-timeout)
 )
 
 
@@ -279,8 +285,8 @@ SINGLE_GROUP(smsbox,
 
 MULTI_GROUP(smsbox-route,
     OCTSTR(smsbox-id)
-    OCTSTR(smsc-ids)
-    OCTSTR(shortcuts)
+    OCTSTR(smsc-id)
+    OCTSTR(shortcode)
 )
 
 
@@ -307,6 +313,7 @@ MULTI_GROUP(smsc,
     OCTSTR(host)
     OCTSTR(alt-host)
     OCTSTR(port)
+    OCTSTR(use-ssl)
     OCTSTR(alt-port)
     OCTSTR(smsc-username)
     OCTSTR(smsc-password)
@@ -330,6 +337,7 @@ MULTI_GROUP(smsc,
     OCTSTR(pin)
     OCTSTR(phone)
     OCTSTR(send-url)
+    OCTSTR(dlr-url)    
     OCTSTR(sender-prefix)
     OCTSTR(flow-control)
     OCTSTR(wait-ack)
@@ -371,6 +379,12 @@ MULTI_GROUP(smsc,
     OCTSTR(preferred-prefix-regex)
     OCTSTR(max-error-count)
     OCTSTR(alt-addr-charset)
+    OCTSTR(status-success-regex)
+    OCTSTR(status-permfail-regex)
+    OCTSTR(status-tempfail-regex)
+    OCTSTR(max-sms-octets)
+    OCTSTR(login-prompt)
+    OCTSTR(password-prompt)
 )
 
 
@@ -387,6 +401,8 @@ MULTI_GROUP(sms-service,
     OCTSTR(exec)
     OCTSTR(accepted-smsc)
     OCTSTR(accepted-smsc-regex)
+    OCTSTR(accepted-account)
+    OCTSTR(accepted-account-regex)
     OCTSTR(forced-smsc)
     OCTSTR(default-smsc)
     OCTSTR(faked-sender)
@@ -532,10 +548,18 @@ MULTI_GROUP(pgsql-connection,
 )
 
 
+MULTI_GROUP(sqlite-connection,
+    OCTSTR(id)
+    OCTSTR(database)
+    OCTSTR(max-connections)
+    OCTSTR(lock-timeout)
+)
+
 MULTI_GROUP(sqlite3-connection,
     OCTSTR(id)
     OCTSTR(database)
     OCTSTR(max-connections)
+    OCTSTR(lock-timeout)
 )
 
  

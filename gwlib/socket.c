@@ -1,7 +1,7 @@
 /* ==================================================================== 
  * The Kannel Software License, Version 1.0 
  * 
- * Copyright (c) 2001-2005 Kannel Group  
+ * Copyright (c) 2001-2009 Kannel Group  
  * Copyright (c) 1998-2001 WapIT Ltd.   
  * All rights reserved. 
  * 
@@ -577,6 +577,12 @@ int udp_recvfrom(int s, Octstr **datagram, Octstr **addr)
 Octstr *host_ip(struct sockaddr_in addr)
 {
     return gw_netaddr_to_octstr(AF_INET, &addr.sin_addr);
+}
+
+
+int host_port(struct sockaddr_in addr)
+{
+    return ntohs(addr.sin_port);
 }
 
 
