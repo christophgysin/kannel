@@ -18,6 +18,7 @@ bindir = @bindir@
 sbindir = @sbindir@
 libexecdir = @libexecdir@
 datadir = @datadir@
+datarootdir = @datarootdir@
 sysconfdir = @sysconfdir@
 sharedstatedir = @sharedstatedir@
 localstatedir = @localstatedir@
@@ -67,11 +68,9 @@ YACC = @YACC@
 # -v gives verbose output.
 YFLAGS = -d -p ws_yy_
 
-
 mkinstalldirs = $(SHELL) $(top_srcdir)/mkinstalldirs
 CONFIG_HEADER = gw-config.h
 CONFIG_CLEAN_FILES =
-
 
 LIBOBJS=@LIBOBJS@
 LIBSRCS=$(LIBOBJS:.o=.c)
@@ -153,8 +152,9 @@ benchoutputs = \
     $(wildcard benchmarks/*.png) \
     $(wildcard benchmarks/*.xml)
 
-srcs = $(wildcard */*.c)
+srcs = $(wildcard */*.c) $(wildcard */*/*.c)
 objs = $(srcs:.c=.o)
+pres = $(srcs:.c=.i)
 
 libs = libgw.a libwmlscript.a libwap.a libgwlib.a
 
@@ -174,8 +174,7 @@ ps = $(pssrcs:.png=.ps)
 figsrcs = $(wildcard doc/userguide/*.fig doc/arch/*.fig)
 figs = $(figsrcs:.fig=.png)  $(figsrcs:.fig=.ps)
 
-
-.SUFFIXES: $(SUFFIXES) .xml .html .rtf .ps .fig .png .y .c .o .pdf
+.SUFFIXES: $(SUFFIXES) .xml .html .rtf .ps .fig .png .y .c .i .o .pdf
 
 .xml.html:
 	sed "s/#FIGTYPE#/.png/;s/#VERSION#/${VERSION}/;s/#DATE#/`date +%Y.%m.%d`/;s/#DRAFTS#/${DOCDRAFTS}/" $< > $*.tmp
@@ -228,6 +227,9 @@ figs = $(figsrcs:.fig=.png)  $(figsrcs:.fig=.ps)
 
 .c.o:
 	$(CC) $(CFLAGS) -o $@ -c $<
+	
+.c.i:
+	$(CC) $(CFLAGS) -o $@ -E $<
 
 all: progs $(testprogs) $(checkprogs) $(DOCSTARGET) gw-config
 progs: $(progs)
@@ -236,6 +238,7 @@ docs: figs ps $(docs)
 no-docs:
 figs: $(figs)
 ps: $(ps)
+pp: $(pres)
 
 check: all
 	utils/run-checks $(checks)
@@ -251,6 +254,8 @@ install: all
 		$(INSTALL) $$prog \
 		    $(DESTDIR)$(bindir)/`basename $$prog`$(suffix); \
 	done
+	test -r $(DESTDIR)$(bindir)/gw-config || \
+		ln -sf gw-config$(suffix) $(DESTDIR)$(bindir)/gw-config
 	$(INSTALL) -d $(DESTDIR)$(sbindir)
 	for prog in $(sbinprogs); do \
 		$(INSTALL) $$prog \
@@ -310,8 +315,10 @@ install-docs:
 		$(INSTALL_DATA) doc/$$docfile/$$docfile.pdf $(DESTDIR)$(docdir)/$$docfile ; \
 		$(INSTALL_DATA) doc/$$docfile/*.png $(DESTDIR)$(docdir)/$$docfile ; \
 	done
+	
 clean:
-	rm -f */*.o gw/smsc/*.o *.a core gw-config $(progs) $(testprogs) $(checkprogs)
+	find . -name "*.o" -o -name "*.i" -o -name "*.a" | xargs rm -f
+	rm -f core gw-config $(progs) $(testprogs) $(checkprogs)
 	rm -f $(figs) $(ps) $(docs)
 	rm -f $(benchoutputs)
 
@@ -323,7 +330,8 @@ nag:
 
 depend .depend: wmlscript/wsgram.h gw-config.h
 	for dir in $(srcdirs); do \
-		$(MKDEPEND) $$dir/*.c | sed "s:^[^ ^#]:$$dir/&:"; done > .depend
+	for file in $$dir/*.c; do \
+	    $(MKDEPEND) $$file -MT $$dir/`basename $$file .c`.o -MT $$dir/`basename $$file .c`.i; done; done > .depend  
 include .depend
 
 libgw.a: $(gwobjs)

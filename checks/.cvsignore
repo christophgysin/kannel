@@ -4,3 +4,4 @@ check_octstr
 check_date
 check_ipcheck
 *.exe
+*.i

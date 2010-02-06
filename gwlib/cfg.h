@@ -1,7 +1,7 @@
 /* ==================================================================== 
  * The Kannel Software License, Version 1.0 
  * 
- * Copyright (c) 2001-2005 Kannel Group  
+ * Copyright (c) 2001-2009 Kannel Group  
  * Copyright (c) 1998-2001 WapIT Ltd.   
  * All rights reserved. 
  * 
@@ -96,6 +96,9 @@ void cfg_set(CfgGroup *grp, Octstr *varname, Octstr *value);
 
 void grp_dump(CfgGroup *grp);
 void cfg_dump(Cfg *cfg);
+
+void cfg_init(void);
+void cfg_shutdown(void);
 
 /*
  * Dump all known config groups and values to stdout.

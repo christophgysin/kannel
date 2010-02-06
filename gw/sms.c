@@ -1,7 +1,7 @@
 /* ==================================================================== 
  * The Kannel Software License, Version 1.0 
  * 
- * Copyright (c) 2001-2005 Kannel Group  
+ * Copyright (c) 2001-2009 Kannel Group  
  * Copyright (c) 1998-2001 WapIT Ltd.   
  * All rights reserved. 
  * 
@@ -188,7 +188,7 @@ int sms_msgdata_len(Msg* msg)
 
 	if (msg->sms.coding == DC_7BIT) {
 		msgdata = octstr_duplicate(msg->sms.msgdata);
-		charset_latin1_to_gsm(msgdata);
+		charset_utf8_to_gsm(msgdata);
 		ret = octstr_len(msgdata);
 		octstr_destroy(msgdata);
 	} else 
@@ -251,7 +251,7 @@ static Octstr *extract_msgdata_part(Octstr *msgdata, Octstr *split_chars,
     Octstr *part;
 
     len = max_part_len;
-    if (split_chars != NULL)
+    if (max_part_len < octstr_len(msgdata) && split_chars != NULL)
 	for (i = max_part_len; i > 0; i--)
 	    if (octstr_search_char(split_chars,
 				   octstr_get_char(msgdata, i - 1), 0) != -1) {
@@ -267,33 +267,35 @@ static Octstr *extract_msgdata_part(Octstr *msgdata, Octstr *split_chars,
 static Octstr *extract_msgdata_part_by_coding(Msg *msg, Octstr *split_chars,
         int max_part_len)
 {
-    Octstr *temp = NULL;
-    int pos, esc_count;
+    Octstr *temp = NULL, *temp_utf;
 
     if (msg->sms.coding == DC_8BIT || msg->sms.coding == DC_UCS2) {
         /* nothing to do here, just call the original extract_msgdata_part */
         return extract_msgdata_part(msg->sms.msgdata, split_chars, max_part_len);
     }
 
+    /* convert to and the from gsm, so we drop all non GSM chars */
+    charset_utf8_to_gsm(msg->sms.msgdata);
+    charset_gsm_to_utf8(msg->sms.msgdata);
+
     /* 
      * else we need to do something special. I'll just get charset_gsm_truncate to
      * cut the string to the required length and then count real characters. 
      */
      temp = octstr_duplicate(msg->sms.msgdata);
-     charset_latin1_to_gsm(temp);
+     charset_utf8_to_gsm(temp);
      charset_gsm_truncate(temp, max_part_len);
 
-     pos = esc_count = 0;
-
-     while ((pos = octstr_search_char(temp, 27, pos)) != -1) {
-        ++pos;
-         ++esc_count;
-     }
+     /* calculate utf-8 length */
+     temp_utf = octstr_duplicate(temp);
+     charset_gsm_to_utf8(temp_utf);
+     max_part_len = octstr_len(temp_utf);
 
      octstr_destroy(temp);
+     octstr_destroy(temp_utf);
 
      /* now just call the original extract_msgdata_part with the new length */
-     return extract_msgdata_part(msg->sms.msgdata, split_chars, max_part_len - esc_count);
+     return extract_msgdata_part(msg->sms.msgdata, split_chars, max_part_len);
 }
 
 
@@ -316,7 +318,7 @@ List *sms_split(Msg *orig, Octstr *header, Octstr *footer,
     if (orig->sms.coding == DC_8BIT || orig->sms.coding == DC_UCS2)
         max_part_len = max_octets - udh_len - hf_len;
     else
-        max_part_len = max_octets * 8 / 7 - (udh_len * 8 + 6) / 7 - hf_len;
+        max_part_len = (max_octets - udh_len) * 8 / 7 - hf_len;
 
     if (sms_msgdata_len(orig) > max_part_len && catenate) {
         /* Change part length to take concatenation overhead into account */
@@ -326,7 +328,7 @@ List *sms_split(Msg *orig, Octstr *header, Octstr *footer,
         if (orig->sms.coding == DC_8BIT || orig->sms.coding == DC_UCS2)
             max_part_len = max_octets - udh_len - hf_len;
         else
-            max_part_len = max_octets * 8 / 7 - (udh_len * 8 + 6) / 7 - hf_len;
+            max_part_len = (max_octets - udh_len) * 8 / 7 - hf_len;
     }
 
     /* ensure max_part_len is never negativ */
@@ -336,6 +338,7 @@ List *sms_split(Msg *orig, Octstr *header, Octstr *footer,
     msgno = 0;
     list = gwlist_create();
 
+    last = 0;
     do {
         msgno++;
         part = msg_duplicate(orig);
@@ -350,19 +353,16 @@ List *sms_split(Msg *orig, Octstr *header, Octstr *footer,
             part->sms.dlr_mask = 0;
         }
         octstr_destroy(part->sms.msgdata);
-        if (sms_msgdata_len(temp) <= max_part_len || msgno == max_messages) {
-            part->sms.msgdata = temp->sms.msgdata ? 
-                octstr_copy(temp->sms.msgdata, 0, max_part_len) : octstr_create("");
+        if (sms_msgdata_len(temp) <= max_part_len || msgno == max_messages)
             last = 1;
-        }
-        else {
-            part->sms.msgdata = 
-                extract_msgdata_part_by_coding(temp, split_chars,
-                                               max_part_len - nlsuf_len);
-            /* create new id for every part, except last */
+
+        part->sms.msgdata = 
+            extract_msgdata_part_by_coding(temp, split_chars,
+                                           max_part_len - nlsuf_len);
+        /* create new id for every part, except last */
+        if (!last)
             uuid_generate(part->sms.id);
-            last = 0;
-        }
+
         if (header)
             octstr_insert(part->sms.msgdata, header, 0);
         if (footer)

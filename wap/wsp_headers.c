@@ -1,7 +1,7 @@
 /* ==================================================================== 
  * The Kannel Software License, Version 1.0 
  * 
- * Copyright (c) 2001-2005 Kannel Group  
+ * Copyright (c) 2001-2009 Kannel Group  
  * Copyright (c) 1998-2001 WapIT Ltd.   
  * All rights reserved. 
  * 
@@ -122,7 +122,7 @@ int wsp_field_value(ParseContext *context, int *well_known_value)
     } else if (val > 127) {
         *well_known_value = val - 128;
         return WSP_FIELD_VALUE_ENCODED;
-    } else if (val == WSP_QUOTE) {  /* 127 */
+    } else if (val == WSP_QUOTE || val == '"') {  /* 127 */
         *well_known_value = -1;
         /* We already consumed the Quote */
         return WSP_FIELD_VALUE_NUL_STRING;
@@ -999,7 +999,7 @@ static Octstr *unpack_warning_value(ParseContext *context)
     if (warn_text && octstr_get_char(warn_text, 0) == WSP_QUOTE)
         octstr_delete(warn_text, 0, 1);
     if (octstr_get_char(warn_text, 0) != quote)
-        octstr_insert_data(warn_text, 0, &quote, 1);
+        octstr_insert_data(warn_text, 0, (char *)&quote, 1);
     if (octstr_get_char(warn_text, octstr_len(warn_text) - 1) != quote)
         octstr_append_char(warn_text, quote);
 
@@ -1125,7 +1125,7 @@ void wsp_unpack_well_known_field(List *unpacked, int field_type,
 
         case WSP_HEADER_PRAGMA:
             if (val == 0)
-                ch = "no-cache";
+                ch = (unsigned char *)"no-cache";
             else
                 warning(0, "Unknown pragma value 0x%02x.", val);
             break;
@@ -1290,7 +1290,7 @@ void wsp_unpack_well_known_field(List *unpacked, int field_type,
     }
 
     if (ch == NULL && decoded != NULL)
-        ch = octstr_get_cstr(decoded);
+        ch = (unsigned char *)octstr_get_cstr(decoded);
     if (ch == NULL)
         goto value_error;
 
@@ -1299,7 +1299,7 @@ void wsp_unpack_well_known_field(List *unpacked, int field_type,
         goto value_error;
     }
 
-    http_header_add(unpacked, headername, ch);
+    http_header_add(unpacked, (char *)headername,(char *) ch);
     octstr_destroy(decoded);
     return;
 
@@ -1487,7 +1487,7 @@ struct headerinfo headerinfo[] =
         { WSP_HEADER_X_WAP_CONTENT_URI, pack_uri, 0},
         { WSP_HEADER_X_WAP_INITIATOR_URI, pack_uri, 0},
         { WSP_HEADER_X_WAP_APPLICATION_ID, wsp_pack_integer_string, 0},
-        { WSP_HEADER_CONTENT_ID, wsp_pack_text, 0},
+        { WSP_HEADER_CONTENT_ID, wsp_pack_quoted_text, 0},
         { WSP_HEADER_ENCODING_VERSION, wsp_pack_version_value, 0 }
         // DAVI { WSP_HEADER_SET_COOKIE, pack_version_value, 0 }
     };
@@ -1621,6 +1621,15 @@ int wsp_pack_text(Octstr *packed, Octstr *text)
     octstr_append(packed, text);
     octstr_append_char(packed, 0);
     return 0;
+}
+
+/* Pack a string as quoted-text WAP WSP 203, Section 8.4.2.1 */
+int wsp_pack_quoted_text(Octstr *packed, Octstr *text)
+{
+     octstr_append_char(packed, '"');
+     octstr_append(packed,text);
+     octstr_append_char(packed,0);
+     return 0;
 }
 
 /* Pack text as Quoted-string if it starts with a " character.
@@ -1781,11 +1790,11 @@ void wsp_pack_long_integer(Octstr *packed, unsigned long integer)
      * at the same position, because that's easier. */
     for (len = 0; integer != 0; integer >>= 8, len++) {
         octet = integer & 0xff;
-        octstr_insert_data(packed, oldlen, &octet, 1);
+        octstr_insert_data(packed, oldlen, (char *)&octet, 1);
     }
 
     octet = len;
-    octstr_insert_data(packed, oldlen, &octet, 1);
+    octstr_insert_data(packed, oldlen, (char *)&octet, 1);
 }
 
 void wsp_pack_short_integer(Octstr *packed, unsigned long integer)

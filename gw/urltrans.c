@@ -1,7 +1,7 @@
 /* ==================================================================== 
  * The Kannel Software License, Version 1.0 
  * 
- * Copyright (c) 2001-2005 Kannel Group  
+ * Copyright (c) 2001-2009 Kannel Group  
  * Copyright (c) 1998-2001 WapIT Ltd.   
  * All rights reserved. 
  * 
@@ -71,7 +71,6 @@
 #include "urltrans.h"
 #include "gwlib/gwlib.h"
 #include "gw/sms.h"
-#include "gwlib/regex.h"
 
 
 /***********************************************************************
@@ -85,8 +84,6 @@
  * Hold one keyword/options entity
  */
 struct URLTranslation {
-    Octstr *keyword;	/* keyword in SMS (similar) query */
-    List *aliases;	/* keyword aliases, List of Octstr */
     int type;		/* see enumeration in header file */
     Octstr *pattern;	/* url, text or file-name pattern */
     Octstr *prefix;	/* for prefix-cut */
@@ -101,6 +98,8 @@ struct URLTranslation {
     Octstr *header;	/* string to be inserted to each SMS */
     Octstr *footer;	/* string to be appended to each SMS */
     List *accepted_smsc; /* smsc id's allowed to use this service. If not set,
+			    all messages can use this service */
+    List *accepted_account; /* account id's allowed to use this service. If not set,
 			    all messages can use this service */
     
     Octstr *name;	/* Translation name */
@@ -130,6 +129,7 @@ struct URLTranslation {
 
     regex_t *keyword_regex;       /* the compiled regular expression for the keyword*/
     regex_t *accepted_smsc_regex;
+    regex_t *accepted_account_regex;
     regex_t *allowed_prefix_regex;
     regex_t *denied_prefix_regex;
     regex_t *allowed_receiver_prefix_regex;
@@ -144,7 +144,7 @@ struct URLTranslation {
  */
 struct URLTranslationList {
     List *list;
-    Dict *dict;		/* Dict of lowercase Octstr keywords*/
+    List *defaults; /* List of default sms-services */
     Dict *names;	/* Dict of lowercase Octstr names */
 };
 
@@ -157,14 +157,10 @@ struct URLTranslationList {
 static long count_occurences(Octstr *str, Octstr *pat);
 static URLTranslation *create_onetrans(CfgGroup *grp);
 static void destroy_onetrans(void *ot);
-static URLTranslation *find_translation(URLTranslationList *trans, 
-					List *words, Octstr *smsc,
-					Octstr *sender, Octstr *receiver, int *reject);
+static URLTranslation *find_translation(URLTranslationList *trans, Msg *msg);
 static URLTranslation *find_default_translation(URLTranslationList *trans,
 						Octstr *smsc, Octstr *sender, Octstr *receiver,
-						int *reject);
-static URLTranslation *find_black_list_translation(URLTranslationList *trans,
-						Octstr *smsc);
+						Octstr *account);
 
 
 /***********************************************************************
@@ -185,7 +181,7 @@ URLTranslationList *urltrans_create(void)
     
     trans = gw_malloc(sizeof(URLTranslationList));
     trans->list = gwlist_create();
-    trans->dict = dict_create(1024, destroy_keyword_list);
+    trans->defaults = gwlist_create();
     trans->names = dict_create(1024, destroy_keyword_list);
     return trans;
 }
@@ -194,8 +190,8 @@ URLTranslationList *urltrans_create(void)
 void urltrans_destroy(URLTranslationList *trans) 
 {
     gwlist_destroy(trans->list, destroy_onetrans);
+    gwlist_destroy(trans->defaults, destroy_onetrans);
     dict_destroy(trans->names);
-    dict_destroy(trans->dict);
     gw_free(trans);
 }
 
@@ -203,15 +199,16 @@ void urltrans_destroy(URLTranslationList *trans)
 int urltrans_add_one(URLTranslationList *trans, CfgGroup *grp)
 {
     URLTranslation *ot;
-    long i;
-    List *list, *list2;
-    Octstr *alias;
+    List *list2;
     
     ot = create_onetrans(grp);
     if (ot == NULL)
 	return -1;
-		
-    gwlist_append(trans->list, ot);
+
+    if (ot->type != TRANSTYPE_SENDSMS && ot->keyword_regex == NULL)
+        gwlist_append(trans->defaults, ot);
+    else 
+        gwlist_append(trans->list, ot);
     
     list2 = dict_get(trans->names, ot->name);
     if (list2 == NULL) {
@@ -219,27 +216,6 @@ int urltrans_add_one(URLTranslationList *trans, CfgGroup *grp)
 	dict_put(trans->names, ot->name, list2);
     }
     gwlist_append(list2, ot);
-
-    if (ot->keyword == NULL || ot->type == TRANSTYPE_SENDSMS)
-    	return 0;
-
-    list = dict_get(trans->dict, ot->keyword);
-    if (list == NULL) {
-    	list = gwlist_create();
-	dict_put(trans->dict, ot->keyword, list);
-    }
-    gwlist_append(list, ot);
-
-    for (i = 0; i < gwlist_len(ot->aliases); ++i) {
-	alias = gwlist_get(ot->aliases, i);
-	list = dict_get(trans->dict, alias);
-	if (list == NULL) {
-	    list = gwlist_create();
-	    dict_put(trans->dict, alias, list);
-	}
-	gwlist_append(list, ot);
-    }
-
 
     return 0;
 }
@@ -272,27 +248,15 @@ int urltrans_add_cfg(URLTranslationList *trans, Cfg *cfg)
 }
 
 
-URLTranslation *urltrans_find(URLTranslationList *trans, Octstr *text,
-			      Octstr *smsc, Octstr *sender, Octstr *receiver) 
+URLTranslation *urltrans_find(URLTranslationList *trans, Msg *msg) 
 {
-    List *words;
     URLTranslation *t = NULL;
-    int reject = 0;
     
-    /* do not panic if text == NULL */
-    if (text != NULL) {
-        words = octstr_split_words(text);
-        t = find_translation(trans, words, smsc, sender, receiver, &reject);
-        gwlist_destroy(words, octstr_destroy_item);
-    }
-    
-    if (reject)
-	t = find_black_list_translation(trans, smsc);
+    t = find_translation(trans, msg);
     if (t == NULL) {
-	t = find_default_translation(trans, smsc, sender, receiver, &reject);
-	if (reject)
-	    t = find_black_list_translation(trans, smsc);
+        t = find_default_translation(trans, msg->sms.smsc_id, msg->sms.sender, msg->sms.receiver, msg->sms.account);
     }
+
     return t;
 }
 
@@ -313,8 +277,7 @@ URLTranslation *urltrans_find_service(URLTranslationList *trans, Msg *msg)
 
 
 
-URLTranslation *urltrans_find_username(URLTranslationList *trans, 
-				       Octstr *name)
+URLTranslation *urltrans_find_username(URLTranslationList *trans, Octstr *name)
 {
     URLTranslation *t;
     int i;
@@ -353,60 +316,30 @@ static void strip_keyword(Msg *request)
 }
 
 
-/*
- * Trans being NULL means that we are servicing ppg (doing dlr, but this does not
- * concern us here).
- */
-Octstr *urltrans_get_pattern(URLTranslation *t, Msg *request)
+Octstr *urltrans_fill_escape_codes(Octstr *pattern, Msg *request)
 {
     Octstr *enc;
     int nextarg, j;
     struct tm tm;
     int num_words;
     List *word_list;
-    Octstr *result, *pattern;
+    Octstr *result;
     long pattern_len;
     long pos;
     int c;
     long i;
     Octstr *temp;
-    Octstr *url, *reply; /* For and If delivery report */
 
-    url = reply = NULL;
-    
-    if (request->sms.sms_type != report_mo && t->type == TRANSTYPE_SENDSMS)
-        return octstr_create("");
+    result = octstr_create("");
 
     if (request->sms.msgdata) {
         word_list = octstr_split_words(request->sms.msgdata);
         num_words = gwlist_len(word_list);
     } else {
-    	word_list = gwlist_create();
+        word_list = gwlist_create();
         num_words = 0;
     }
-
-    result = octstr_create("");
-
-    /* check if this is a delivery report message or not */
-    if (request->sms.sms_type != report_mo) {
-        pattern = t->pattern;
-    } else {
-
-        /* this is a DLR message */
-        reply = octstr_duplicate(request->sms.msgdata);
-        url = octstr_duplicate(request->sms.dlr_url);
-
-        pattern = url;
-        if (octstr_len(pattern) == 0) {
-            if (t && octstr_len(t->dlr_url)) {
-                pattern = t->dlr_url;
-            } else {
-                gwlist_destroy(word_list, octstr_destroy_item);
-                return octstr_create("");
-            }
-        }
-    }
-
+    
     pattern_len = octstr_len(pattern);
     nextarg = 1;
     pos = 0;
@@ -423,223 +356,115 @@ Octstr *urltrans_get_pattern(URLTranslation *t, Msg *request)
             break;
 
     switch (octstr_get_char(pattern, pos + 1)) {
-	case 'k':
-	    if (num_words <= 0)
-		break;
-	    enc = octstr_duplicate(gwlist_get(word_list, 0));
-	    octstr_url_encode(enc);
-	    octstr_append(result, enc);
-	    octstr_destroy(enc);
-	    break;
+    case 'a':
+        for (j = 0; j < num_words; ++j) {
+        enc = octstr_duplicate(gwlist_get(word_list, j));
+        octstr_url_encode(enc);
+        if (j > 0)
+            octstr_append_char(result, '+');
+        octstr_append(result, enc);
+        octstr_destroy(enc);
+        }
+        break;
 
-	case 's':
-	    if (nextarg >= num_words)
-		break;
-	    enc = octstr_duplicate(gwlist_get(word_list, nextarg));
-	    octstr_url_encode(enc);
-	    octstr_append(result, enc);
-	    octstr_destroy(enc);
-	    ++nextarg;
-	    break;
+    case 'A':
+        if (request->sms.msgdata) {
+        enc = octstr_duplicate(request->sms.msgdata);
+        octstr_url_encode(enc);
+        octstr_append(result, enc);
+        octstr_destroy(enc);
+        }
+        break;
 
-	case 'S':
-	    if (nextarg >= num_words)
-		break;
-	    temp = gwlist_get(word_list, nextarg);
-	    for (i = 0; i < octstr_len(temp); ++i) {
-		if (octstr_get_char(temp, i) == '*')
-		    octstr_append_char(result, '~');
-		else
-		    octstr_append_char(result, octstr_get_char(temp, i));
-	    }
-	    ++nextarg;
-	    break;
+    case 'b':
+        enc = octstr_duplicate(request->sms.msgdata);
+        octstr_url_encode(enc);
+        octstr_append(result, enc);
+        octstr_destroy(enc);
+        break;
 
-	case 'r':
-	    for (j = nextarg; j < num_words; ++j) {
-		enc = octstr_duplicate(gwlist_get(word_list, j));
-		octstr_url_encode(enc);
-		if (j != nextarg)
-		    octstr_append_char(result, '+');
-		octstr_append(result, enc);
-		octstr_destroy(enc);
-	    }
-	    break;
-    
-	/* NOTE: the sender and receiver is already switched in
-	 *    message, so that's why we must use 'sender' when
-	 *    we want original receiver and vice versa
-	 */
-	case 'P':
-	    enc = octstr_duplicate(request->sms.sender);
-    	    octstr_url_encode(enc);
-	    octstr_append(result, enc);
-	    octstr_destroy(enc);
-	    break;
-
-	case 'p':
-	    enc = octstr_duplicate(request->sms.receiver);
-	    octstr_url_encode(enc);
-	    octstr_append(result, enc);
-	    octstr_destroy(enc);
-	    break;
-
-	case 'Q':
-	    if (strncmp(octstr_get_cstr(request->sms.sender), "00", 2) == 0) {
-		enc = octstr_copy(request->sms.sender, 2, 
-		    	    	  octstr_len(request->sms.sender));
-		octstr_url_encode(enc);
-		octstr_format_append(result, "%%2B%S", enc);
-		octstr_destroy(enc);
-	    } else {
-		enc = octstr_duplicate(request->sms.sender);
-    	    	octstr_url_encode(enc);
-		octstr_append(result, enc);
-		octstr_destroy(enc);
-	    }
-	    break;
-
-	case 'q':
-	    if (strncmp(octstr_get_cstr(request->sms.receiver),"00",2)==0) {
-		enc = octstr_copy(request->sms.receiver, 2, 
-		    	    	  octstr_len(request->sms.receiver));
-		octstr_url_encode(enc);
-		octstr_format_append(result, "%%2B%S", enc);
-		octstr_destroy(enc);
-	    } else {
-		enc = octstr_duplicate(request->sms.receiver);
-		octstr_url_encode(enc);
-		octstr_append(result, enc);
-		octstr_destroy(enc);
-	    }
-	    break;
-
-	case 'a':
-	    for (j = 0; j < num_words; ++j) {
-		enc = octstr_duplicate(gwlist_get(word_list, j));
-		octstr_url_encode(enc);
-		if (j > 0)
-		    octstr_append_char(result, '+');
-		octstr_append(result, enc);
-		octstr_destroy(enc);
-	    }
-	    break;
-
-	case 'b':
-	    enc = octstr_duplicate(request->sms.msgdata);
-	    octstr_url_encode(enc);
-	    octstr_append(result, enc);
-	    octstr_destroy(enc);
-	    break;
-
-	case 't':
-	    tm = gw_gmtime(request->sms.time);
-	    octstr_format_append(result, "%04d-%02d-%02d+%02d:%02d:%02d",
-				 tm.tm_year + 1900,
-				 tm.tm_mon + 1,
-				 tm.tm_mday,
-				 tm.tm_hour,
-				 tm.tm_min,
-				 tm.tm_sec);
-	    break;
-
-	case 'T':
-	    if (request->sms.time == MSG_PARAM_UNDEFINED)
-		break;
-	    octstr_format_append(result, "%ld", request->sms.time);
-	    break;
-
-	case 'i':
-	    if (request->sms.smsc_id == NULL)
-		break;
-	    enc = octstr_duplicate(request->sms.smsc_id);
-	    octstr_url_encode(enc);
-	    octstr_append(result, enc);
-	    octstr_destroy(enc);
-	    break;
-
-	case 'I':
-	    if (!uuid_is_null(request->sms.id)) {
-                char id[UUID_STR_LEN + 1];
-                uuid_unparse(request->sms.id, id);
-	        octstr_append_cstr(result, id);
-            }
-	    break;
-
-	case 'n':
-	    if (request->sms.service == NULL)
-		break;
-	    enc = octstr_duplicate(request->sms.service);
-	    octstr_url_encode(enc);
-	    octstr_append(result, enc);
-	    octstr_destroy(enc);
-	    break;
-
-	case 'd':
-	    enc = octstr_create("");
-	    octstr_append_decimal(enc, request->sms.dlr_mask);
-	    octstr_url_encode(enc);
-	    octstr_append(result, enc);
-	    octstr_destroy(enc);
-	    break;
-
-	case 'A':
-	    if (reply) {
-		enc = octstr_duplicate(reply);
-		octstr_url_encode(enc);
-		octstr_append(result, enc);
-		octstr_destroy(enc);
-	    }
-	    break;
-
-	case 'c':
-	    octstr_append_decimal(result, request->sms.coding);
-	    break;
-
-	case 'C':
-	    if(octstr_len(request->sms.charset)) {
-		octstr_append(result, request->sms.charset);
-	    } else {
-		switch (request->sms.coding) {
-		    case DC_UNDEF:
-		    case DC_7BIT:
-			octstr_append(result, octstr_imm("ISO-8859-1"));
-			break;
-		    case DC_8BIT:
-			octstr_append(result, octstr_imm("8-BIT"));
-			break;
-		    case DC_UCS2:
-			octstr_append(result, octstr_imm("UTF-16BE"));
-			break;
-		}
-	    }
-	    break;
-
-	case 'u':
-	    if(octstr_len(request->sms.udhdata)) {
-		enc = octstr_duplicate(request->sms.udhdata);
-		octstr_url_encode(enc);
-		octstr_append(result, enc);
-		octstr_destroy(enc);
-	    }
-	    break;
-
-	case 'B':  /* billing identifier/information */
-	    if (octstr_len(request->sms.binfo)) {
+    case 'B':  /* billing identifier/information */
+        if (octstr_len(request->sms.binfo)) {
             enc = octstr_duplicate(request->sms.binfo);
             octstr_url_encode(enc);
             octstr_append(result, enc);
             octstr_destroy(enc);
         }
         break;
-	
-    case 'o':  /* account information (may be operator id for aggregators */
-	    if (octstr_len(request->sms.account)) {
-            enc = octstr_duplicate(request->sms.account);
+
+    case 'c':
+        octstr_append_decimal(result, request->sms.coding);
+        break;
+
+    case 'C':
+        if(octstr_len(request->sms.charset)) {
+            octstr_append(result, request->sms.charset);
+        } else {
+            switch (request->sms.coding) {
+            case DC_UNDEF:
+            case DC_7BIT:
+                octstr_append(result, octstr_imm("UTF-8"));
+                break;
+            case DC_8BIT:
+                octstr_append(result, octstr_imm("8-BIT"));
+                break;
+            case DC_UCS2:
+                octstr_append(result, octstr_imm("UTF-16BE"));
+                break;
+            }
+        }
+        break;
+
+    case 'd':
+        enc = octstr_create("");
+        octstr_append_decimal(enc, request->sms.dlr_mask);
+        octstr_url_encode(enc);
+        octstr_append(result, enc);
+        octstr_destroy(enc);
+        break;
+
+    case 'f':  /* smsc number*/
+        if (octstr_len(request->sms.smsc_number)) {
+            enc = octstr_duplicate(request->sms.smsc_number);
             octstr_url_encode(enc);
             octstr_append(result, enc);
             octstr_destroy(enc);
         }
+        break;
+
+    case 'F':
+        if (request->sms.foreign_id == NULL)
+            break;
+        enc = octstr_duplicate(request->sms.foreign_id);
+        octstr_url_encode(enc);
+        octstr_append(result, enc);
+        octstr_destroy(enc);
+        break;
+
+    case 'i':
+        if (request->sms.smsc_id == NULL)
+        break;
+        enc = octstr_duplicate(request->sms.smsc_id);
+        octstr_url_encode(enc);
+        octstr_append(result, enc);
+        octstr_destroy(enc);
+        break;
+
+    case 'I':
+        if (!uuid_is_null(request->sms.id)) {
+                char id[UUID_STR_LEN + 1];
+                uuid_unparse(request->sms.id, id);
+            octstr_append_cstr(result, id);
+            }
+        break;
+
+    case 'k':
+        if (num_words <= 0)
+        break;
+        enc = octstr_duplicate(gwlist_get(word_list, 0));
+        octstr_url_encode(enc);
+        octstr_append(result, enc);
+        octstr_destroy(enc);
         break;
 
     case 'm':  /* mclass - message class */
@@ -658,37 +483,199 @@ Octstr *urltrans_get_pattern(URLTranslation *t, Msg *request)
         octstr_destroy(enc);
         break;
 
-    case 'f':  /* smsc number*/
-	    if (octstr_len(request->sms.smsc_number)) {
-            enc = octstr_duplicate(request->sms.smsc_number);
+    case 'n':
+        if (request->sms.service == NULL)
+        break;
+        enc = octstr_duplicate(request->sms.service);
+        octstr_url_encode(enc);
+        octstr_append(result, enc);
+        octstr_destroy(enc);
+        break;
+
+    case 'o':  /* account information (may be operator id for aggregators */
+        if (octstr_len(request->sms.account)) {
+            enc = octstr_duplicate(request->sms.account);
             octstr_url_encode(enc);
             octstr_append(result, enc);
             octstr_destroy(enc);
         }
         break;
 
-	/* XXX sms.parameters not present in here:
-	 *   * pid - will we receive this ? 
-	 *   * alt-dcs - shouldn't be required unless we want to inform 
-	 *               which alt-dcs external server should use back
-	 *   * compress - if we use compression, probably kannel would 
-	 *                decompress and reset this to 0. not required
-	 *   * validity, deferred, rpi - we don't receive these from smsc
-	 *   * username, password, dlr-url, account - nonsense to send
-	 */
-
-	case '%':
-	    octstr_format_append(result, "%%");
-	    break;
-
-	default:
-	    octstr_format_append(result, "%%%c",
-	    	    	    	 octstr_get_char(pattern, pos + 1));
-	    break;
-	}
-
-	pos += 2;
+    case 'O':  /* DCS */
+    {
+        int dcs;
+        dcs = fields_to_dcs(request, request->sms.alt_dcs);
+        octstr_format_append(result, "%02d", dcs);
+        break;
     }
+
+    /* NOTE: the sender and receiver is already switched in
+     *    message, so that's why we must use 'sender' when
+     *    we want original receiver and vice versa
+     */
+    case 'P':
+        enc = octstr_duplicate(request->sms.sender);
+        octstr_url_encode(enc);
+        octstr_append(result, enc);
+        octstr_destroy(enc);
+        break;
+
+    case 'p':
+        enc = octstr_duplicate(request->sms.receiver);
+        octstr_url_encode(enc);
+        octstr_append(result, enc);
+        octstr_destroy(enc);
+        break;
+
+    case 'q':
+        if (strncmp(octstr_get_cstr(request->sms.receiver),"00",2)==0) {
+        enc = octstr_copy(request->sms.receiver, 2, 
+                          octstr_len(request->sms.receiver));
+        octstr_url_encode(enc);
+        octstr_format_append(result, "%%2B%S", enc);
+        octstr_destroy(enc);
+        } else {
+        enc = octstr_duplicate(request->sms.receiver);
+        octstr_url_encode(enc);
+        octstr_append(result, enc);
+        octstr_destroy(enc);
+        }
+        break;
+
+    case 'Q':
+        if (strncmp(octstr_get_cstr(request->sms.sender), "00", 2) == 0) {
+        enc = octstr_copy(request->sms.sender, 2, 
+                          octstr_len(request->sms.sender));
+        octstr_url_encode(enc);
+        octstr_format_append(result, "%%2B%S", enc);
+        octstr_destroy(enc);
+        } else {
+        enc = octstr_duplicate(request->sms.sender);
+                octstr_url_encode(enc);
+        octstr_append(result, enc);
+        octstr_destroy(enc);
+        }
+        break;
+
+    case 'r':
+        for (j = nextarg; j < num_words; ++j) {
+        enc = octstr_duplicate(gwlist_get(word_list, j));
+        octstr_url_encode(enc);
+        if (j != nextarg)
+            octstr_append_char(result, '+');
+        octstr_append(result, enc);
+        octstr_destroy(enc);
+        }
+        break;
+
+    case 's':
+        if (nextarg >= num_words)
+        break;
+        enc = octstr_duplicate(gwlist_get(word_list, nextarg));
+        octstr_url_encode(enc);
+        octstr_append(result, enc);
+        octstr_destroy(enc);
+        ++nextarg;
+        break;
+
+    case 'S':
+        if (nextarg >= num_words)
+        break;
+        temp = gwlist_get(word_list, nextarg);
+        for (i = 0; i < octstr_len(temp); ++i) {
+        if (octstr_get_char(temp, i) == '*')
+            octstr_append_char(result, '~');
+        else
+            octstr_append_char(result, octstr_get_char(temp, i));
+        }
+        ++nextarg;
+        break;
+
+    case 't':
+        tm = gw_gmtime(request->sms.time);
+        octstr_format_append(result, "%04d-%02d-%02d+%02d:%02d:%02d",
+                 tm.tm_year + 1900,
+                 tm.tm_mon + 1,
+                 tm.tm_mday,
+                 tm.tm_hour,
+                 tm.tm_min,
+                 tm.tm_sec);
+        break;
+
+    case 'T':
+        if (request->sms.time == MSG_PARAM_UNDEFINED)
+        break;
+        octstr_format_append(result, "%ld", request->sms.time);
+        break;
+
+    case 'u':
+        if(octstr_len(request->sms.udhdata)) {
+        enc = octstr_duplicate(request->sms.udhdata);
+        octstr_url_encode(enc);
+        octstr_append(result, enc);
+        octstr_destroy(enc);
+        }
+        break;
+    
+    /* XXX sms.parameters not present in here:
+     *   * pid - will we receive this ? 
+     *   * alt-dcs - shouldn't be required unless we want to inform 
+     *               which alt-dcs external server should use back
+     *   * compress - if we use compression, probably kannel would 
+     *                decompress and reset this to 0. not required
+     *   * validity, deferred, rpi - we don't receive these from smsc
+     *   * username, password, dlr-url, account - nonsense to send
+     */
+    case '%':
+        octstr_format_append(result, "%%");
+        break;
+
+    default:
+        octstr_format_append(result, "%%%c",
+                             octstr_get_char(pattern, pos + 1));
+        break;
+    }
+
+    pos += 2;
+    }
+    
+    gwlist_destroy(word_list, octstr_destroy_item);    
+
+    return result;    
+}
+
+
+/*
+ * Trans being NULL means that we are servicing ppg (doing dlr, but this does not
+ * concern us here).
+ */
+Octstr *urltrans_get_pattern(URLTranslation *t, Msg *request)
+{
+    Octstr *result, *pattern;
+    
+    if (request->sms.sms_type != report_mo && t->type == TRANSTYPE_SENDSMS)
+        return octstr_create("");
+
+    /* check if this is a delivery report message or not */
+    if (request->sms.sms_type != report_mo) {
+        pattern = t->pattern;
+    } else {
+        /* this is a DLR message */
+        pattern = request->sms.dlr_url;
+        if (octstr_len(pattern) == 0) {
+            if (t && octstr_len(t->dlr_url)) {
+                pattern = t->dlr_url;
+            } else {
+                return octstr_create("");
+            }
+        }
+    }
+
+    /* We have pulled this out into an own exported function. This 
+     * gives other modules the chance to use the same escape code
+     * semantics for Msgs. */
+    result = urltrans_fill_escape_codes(pattern, request);
+
     /*
      * this SHOULD be done in smsbox, not here, but well,
      * much easier to do here
@@ -697,10 +684,6 @@ Octstr *urltrans_get_pattern(URLTranslation *t, Msg *request)
 		    && t->strip_keyword)
 	strip_keyword(request);
 
-    octstr_destroy(url);
-    octstr_destroy(reply);
-
-    gwlist_destroy(word_list, octstr_destroy_item);
     return result;
 }
 
@@ -873,11 +856,12 @@ int urltrans_send_sender(URLTranslation *t)
 static URLTranslation *create_onetrans(CfgGroup *grp)
 {
     URLTranslation *ot;
-    Octstr *aliases, *url, *post_url, *post_xml, *text, *file, *exec;
-    Octstr *accepted_smsc, *forced_smsc, *default_smsc;
-    Octstr *grpname, *sendsms_user, *sms_service;
+    Octstr *url, *post_url, *post_xml, *text, *file, *exec;
+    Octstr *accepted_smsc, *accepted_account, *forced_smsc, *default_smsc;
+    Octstr *grpname;
     int is_sms_service;
     Octstr *accepted_smsc_regex;
+    Octstr *accepted_account_regex;
     Octstr *allowed_prefix_regex;
     Octstr *denied_prefix_regex;
     Octstr *allowed_receiver_prefix_regex;
@@ -885,69 +869,33 @@ static URLTranslation *create_onetrans(CfgGroup *grp)
     Octstr *white_list_regex;
     Octstr *black_list_regex;
     Octstr *keyword_regex;
-    Octstr *os;
+    Octstr *os, *tmp;
     
     grpname = cfg_get_group_name(grp);
     if (grpname == NULL)
     	return NULL;
 
-    sms_service = octstr_imm("sms-service");
-    sendsms_user = octstr_imm("sendsms-user");
-    if (octstr_compare(grpname, sms_service) == 0)
-    	is_sms_service = 1;
-    else if (octstr_compare(grpname, sendsms_user) == 0)
-    	is_sms_service = 0;
+    if (octstr_str_compare(grpname, "sms-service") == 0)
+        is_sms_service = 1;
+    else if (octstr_str_compare(grpname, "sendsms-user") == 0)
+        is_sms_service = 0;
     else {
-	octstr_destroy(grpname);
-	return NULL;
+        octstr_destroy(grpname);
+        return NULL;
     }
     octstr_destroy(grpname);
 
     ot = gw_malloc(sizeof(URLTranslation));
-
-    ot->keyword = NULL;
-    ot->aliases = NULL;
-    ot->pattern = NULL;
-    ot->prefix = NULL;
-    ot->suffix = NULL;
-    ot->faked_sender = NULL;
-    ot->default_sender = NULL;
-    ot->split_chars = NULL;
-    ot->split_suffix = NULL;
-    ot->footer = NULL;
-    ot->header = NULL;
-    ot->name = NULL;
-    ot->username = NULL;
-    ot->password = NULL;
-    ot->omit_empty = 0;
-    ot->accepted_smsc = NULL;
-    ot->forced_smsc = NULL;
-    ot->default_smsc = NULL;
-    ot->allow_ip = NULL;
-    ot->deny_ip = NULL;
-    ot->allowed_prefix = NULL;
-    ot->denied_prefix = NULL;
-    ot->allowed_recv_prefix = NULL;
-    ot->denied_recv_prefix = NULL;
-    ot->white_list = NULL;
-    ot->black_list = NULL;
-    ot->keyword_regex = NULL;
-    ot->accepted_smsc_regex = NULL;
-    ot->allowed_prefix_regex = NULL;
-    ot->denied_prefix_regex = NULL;
-    ot->allowed_receiver_prefix_regex = NULL;
-    ot->denied_receiver_prefix_regex = NULL;
-    ot->white_list_regex = NULL;
-    ot->black_list_regex = NULL;
+    memset(ot, 0, sizeof(*ot));
     
     if (is_sms_service) {
-	cfg_get_bool(&ot->catch_all, grp, octstr_imm("catch-all"));
+        cfg_get_bool(&ot->catch_all, grp, octstr_imm("catch-all"));
 
-	ot->dlr_url = cfg_get(grp, octstr_imm("dlr-url"));
+        ot->dlr_url = cfg_get(grp, octstr_imm("dlr-url"));
 	    
-	url = cfg_get(grp, octstr_imm("get-url"));
-	if (url == NULL)
-	    url = cfg_get(grp, octstr_imm("url"));
+        url = cfg_get(grp, octstr_imm("get-url"));
+        if (url == NULL)
+            url = cfg_get(grp, octstr_imm("url"));
 	    
 	post_url = cfg_get(grp, octstr_imm("post-url"));
 	post_xml = cfg_get(grp, octstr_imm("post-xml"));
@@ -956,74 +904,118 @@ static URLTranslation *create_onetrans(CfgGroup *grp)
 	exec = cfg_get(grp, octstr_imm("exec"));
 	if (url != NULL) {
 	    ot->type = TRANSTYPE_GET_URL;
-	    ot->pattern = url;
+	    ot->pattern = octstr_duplicate(url);
 	} else if (post_url != NULL) {
 	    ot->type = TRANSTYPE_POST_URL;
-	    ot->pattern = post_url;
+	    ot->pattern = octstr_duplicate(post_url);
 	    ot->catch_all = 1;
 	} else if (post_xml != NULL) {
 	    ot->type = TRANSTYPE_POST_XML;
-	    ot->pattern = post_xml;
+	    ot->pattern = octstr_duplicate(post_xml);
 	    ot->catch_all = 1;
 	} else if (file != NULL) {
 	    ot->type = TRANSTYPE_FILE;
-	    ot->pattern = file;
+	    ot->pattern = octstr_duplicate(file);
 	} else if (text != NULL) {
 	    ot->type = TRANSTYPE_TEXT;
-	    ot->pattern = text;
+	    ot->pattern = octstr_duplicate(text);
 	} else if (exec != NULL) {
 	    ot->type = TRANSTYPE_EXECUTE;
-	    ot->pattern = exec;
+	    ot->pattern = octstr_duplicate(exec);
 	} else {
+	    octstr_destroy(url);
+	    octstr_destroy(post_url);
+	    octstr_destroy(post_xml);
+	    octstr_destroy(file);
+	    octstr_destroy(text);
+	    octstr_destroy(exec);
 	    error(0, "Configuration group `sms-service' "
 	    	     "did not specify get-url, post-url, post-xml, file or text.");
     	    goto error;
 	}
+	octstr_destroy(url);
+	octstr_destroy(post_url);
+	octstr_destroy(post_xml);
+	octstr_destroy(file);
+	octstr_destroy(text);
+	octstr_destroy(exec);
 
-	ot->keyword = cfg_get(grp, octstr_imm("keyword"));
-	if (ot->keyword == NULL) {
-	    error(0, "Group 'sms-service' must include 'keyword'.");
+	tmp = cfg_get(grp, octstr_imm("keyword"));
+        keyword_regex = cfg_get(grp, octstr_imm("keyword-regex"));
+	if (tmp == NULL && keyword_regex == NULL) {
+	    error(0, "Group 'sms-service' must include either 'keyword' or 'keyword-regex'.");
 	    goto error;
 	}
-	octstr_convert_range(ot->keyword, 0, octstr_len(ot->keyword), 
-	    	    	     tolower);
+	if (tmp != NULL && keyword_regex != NULL) {
+	    error(0, "Group 'sms-service' may inlcude either 'keyword' or 'keyword-regex'.");
+	    octstr_destroy(tmp);
+	    octstr_destroy(keyword_regex);
+	    goto error;
+	}
+	
+	if (tmp != NULL && octstr_str_compare(tmp, "default") == 0) {
+	    /* default sms-service */
+	    ot->keyword_regex = NULL;
+	    octstr_destroy(tmp);
+	} else if (tmp != NULL) {
+	    Octstr *aliases;
+	    
+	    /* convert to regex */
+            octstr_convert_range(tmp, 0, octstr_len(tmp), tolower);
+	    keyword_regex = octstr_format("^[ ]*(%S", tmp);
+	    octstr_destroy(tmp);
 
-        keyword_regex = cfg_get(grp, octstr_imm("keyword-regex"));
-        if (keyword_regex != NULL) {
-            if ((ot->keyword_regex = gw_regex_comp(keyword_regex, REG_EXTENDED)) == NULL)
-                  panic(0, "Could not compile pattern '%s'", octstr_get_cstr(keyword_regex));
+	    aliases = cfg_get(grp, octstr_imm("aliases"));
+	    if (aliases != NULL) {
+	        long i;
+	        List *l;
+
+	        l = octstr_split(aliases, octstr_imm(";"));
+	        octstr_destroy(aliases);
+	        
+	        for (i = 0; i < gwlist_len(l); ++i) {
+	            os = gwlist_get(l, i);
+	            octstr_convert_range(os, 0, octstr_len(os), tolower);
+	            octstr_format_append(keyword_regex, "|%S", os);
+	        }
+	        gwlist_destroy(l, octstr_destroy_item);
+	    }
+	    
+	    octstr_append_cstr(keyword_regex, ")[ ]*");
+	}
+
+        if (keyword_regex != NULL && (ot->keyword_regex = gw_regex_comp(keyword_regex, REG_EXTENDED)) == NULL) {
+            error(0, "Could not compile pattern '%s'", octstr_get_cstr(keyword_regex));
             octstr_destroy(keyword_regex);
+            goto error;
         }
 
 	ot->name = cfg_get(grp, octstr_imm("name"));
 	if (ot->name == NULL)
-	    ot->name = octstr_duplicate(ot->keyword);
-
-	aliases = cfg_get(grp, octstr_imm("aliases"));
-	if (aliases == NULL)
-	    ot->aliases = gwlist_create();
-	else {
-	    long i;
-	    Octstr *os;
-
-	    ot->aliases = octstr_split(aliases, octstr_imm(";"));
-	    octstr_destroy(aliases);
-	    for (i = 0; i < gwlist_len(ot->aliases); ++i) {
-		os = gwlist_get(ot->aliases, i);
-	    	octstr_convert_range(os, 0, octstr_len(os), tolower);
-	    }
-	}
+	    ot->name = keyword_regex ? octstr_duplicate(keyword_regex) : octstr_create("default");
+	octstr_destroy(keyword_regex);
 
 	accepted_smsc = cfg_get(grp, octstr_imm("accepted-smsc"));
 	if (accepted_smsc != NULL) {
 	    ot->accepted_smsc = octstr_split(accepted_smsc, octstr_imm(";"));
 	    octstr_destroy(accepted_smsc);
 	}
+	accepted_account = cfg_get(grp, octstr_imm("accepted-account"));
+	if (accepted_account != NULL) {
+	    ot->accepted_account = octstr_split(accepted_account, octstr_imm(";"));
+	    octstr_destroy(accepted_account);
+	}
         accepted_smsc_regex = cfg_get(grp, octstr_imm("accepted-smsc-regex"));
         if (accepted_smsc_regex != NULL) { 
             if ( (ot->accepted_smsc_regex = gw_regex_comp(accepted_smsc_regex, REG_EXTENDED)) == NULL)
             panic(0, "Could not compile pattern '%s'", octstr_get_cstr(accepted_smsc_regex));
             octstr_destroy(accepted_smsc_regex);
+        }
+        accepted_account_regex = cfg_get(grp, octstr_imm("accepted-account-regex"));
+        if (accepted_account_regex != NULL) { 
+            if ( (ot->accepted_account_regex = gw_regex_comp(accepted_account_regex, REG_EXTENDED)) == NULL)
+            panic(0, "Could not compile pattern '%s'", octstr_get_cstr(accepted_account_regex));
+            octstr_destroy(accepted_account_regex);
         }
 
 	cfg_get_bool(&ot->assume_plain_text, grp, 
@@ -1044,7 +1036,7 @@ static URLTranslation *create_onetrans(CfgGroup *grp)
         }
 
 	ot->allowed_recv_prefix = cfg_get(grp, octstr_imm("allowed-receiver-prefix"));
-    ot->denied_recv_prefix = cfg_get(grp, octstr_imm("denied-receiver-prefix"));
+	ot->denied_recv_prefix = cfg_get(grp, octstr_imm("denied-receiver-prefix"));
         denied_receiver_prefix_regex = cfg_get(grp, octstr_imm("denied-receiver-prefix-regex"));
         if (denied_receiver_prefix_regex != NULL) {
             if ((ot->denied_receiver_prefix_regex = gw_regex_comp(denied_receiver_prefix_regex, REG_EXTENDED)) == NULL)
@@ -1067,6 +1059,7 @@ static URLTranslation *create_onetrans(CfgGroup *grp)
 	ot->username = cfg_get(grp, octstr_imm("username"));
 	ot->password = cfg_get(grp, octstr_imm("password"));
 	ot->dlr_url = cfg_get(grp, octstr_imm("dlr-url"));
+	grp_dump(grp);
 	if (ot->password == NULL) {
 	    error(0, "Password required for send-sms user");
 	    goto error;
@@ -1107,11 +1100,11 @@ static URLTranslation *create_onetrans(CfgGroup *grp)
         octstr_destroy(denied_prefix_regex);
     }
     
-	os = cfg_get(grp, octstr_imm("white-list"));
-	if (os != NULL) {
-	    ot->white_list = numhash_create(octstr_get_cstr(os));
-	    octstr_destroy(os);
-	}
+    os = cfg_get(grp, octstr_imm("white-list"));
+    if (os != NULL) {
+        ot->white_list = numhash_create(octstr_get_cstr(os));
+        octstr_destroy(os);
+    }
     white_list_regex = cfg_get(grp, octstr_imm("white-list-regex"));
     if (white_list_regex != NULL) {
         if ((ot->white_list_regex = gw_regex_comp(white_list_regex, REG_EXTENDED)) == NULL)
@@ -1119,11 +1112,11 @@ static URLTranslation *create_onetrans(CfgGroup *grp)
         octstr_destroy(white_list_regex);
     }
 
-	os = cfg_get(grp, octstr_imm("black-list"));
-	if (os != NULL) {
-	    ot->black_list = numhash_create(octstr_get_cstr(os));
-	    octstr_destroy(os);
-	}
+    os = cfg_get(grp, octstr_imm("black-list"));
+    if (os != NULL) {
+        ot->black_list = numhash_create(octstr_get_cstr(os));
+        octstr_destroy(os);
+    }
     black_list_regex = cfg_get(grp, octstr_imm("black-list-regex"));
     if (black_list_regex != NULL) {
         if ((ot->black_list_regex = gw_regex_comp(black_list_regex, REG_EXTENDED)) == NULL)
@@ -1131,13 +1124,10 @@ static URLTranslation *create_onetrans(CfgGroup *grp)
         octstr_destroy(black_list_regex);
     }
 
-    if (cfg_get_integer(&ot->max_messages, grp, 
-    	    	    	octstr_imm("max-messages")) == -1)
+    if (cfg_get_integer(&ot->max_messages, grp, octstr_imm("max-messages")) == -1)
 	ot->max_messages = 1;
-    cfg_get_bool(&ot->concatenation, grp, 
-		 octstr_imm("concatenation"));
-    cfg_get_bool(&ot->omit_empty, grp, 
-		 octstr_imm("omit-empty"));
+    cfg_get_bool(&ot->concatenation, grp, octstr_imm("concatenation"));
+    cfg_get_bool(&ot->omit_empty, grp, octstr_imm("omit-empty"));
     
     ot->header = cfg_get(grp, octstr_imm("header"));
     ot->footer = cfg_get(grp, octstr_imm("footer"));
@@ -1147,13 +1137,13 @@ static URLTranslation *create_onetrans(CfgGroup *grp)
 
     if ( (ot->prefix == NULL && ot->suffix != NULL) ||
 	 (ot->prefix != NULL && ot->suffix == NULL) ) {
-	warning(0, "Service <%s>: suffix and prefix are only used"
-		   " if both are set.", octstr_get_cstr(ot->keyword));
+	warning(0, "Service : suffix and prefix are only used"
+		   " if both are set.");
     }
     if ((ot->prefix != NULL || ot->suffix != NULL) &&
         ot->type != TRANSTYPE_GET_URL) {
-	warning(0, "Service <%s>: suffix and prefix are only used"
-                   " if type is 'get-url'.", octstr_get_cstr(ot->keyword));
+	warning(0, "Service : suffix and prefix are only used"
+                   " if type is 'get-url'.");
     }
     
     return ot;
@@ -1174,8 +1164,6 @@ static void destroy_onetrans(void *p)
     
     ot = p;
     if (ot != NULL) {
-        octstr_destroy(ot->keyword);
-	gwlist_destroy(ot->aliases, octstr_destroy_item);
 	octstr_destroy(ot->dlr_url);
 	octstr_destroy(ot->pattern);
 	octstr_destroy(ot->prefix);
@@ -1187,6 +1175,7 @@ static void destroy_onetrans(void *p)
 	octstr_destroy(ot->header);
 	octstr_destroy(ot->footer);
 	gwlist_destroy(ot->accepted_smsc, octstr_destroy_item);
+	gwlist_destroy(ot->accepted_account, octstr_destroy_item);
 	octstr_destroy(ot->name);
 	octstr_destroy(ot->username);
 	octstr_destroy(ot->password);
@@ -1202,6 +1191,7 @@ static void destroy_onetrans(void *p)
 	numhash_destroy(ot->black_list);
         if (ot->keyword_regex != NULL) gw_regex_destroy(ot->keyword_regex);
         if (ot->accepted_smsc_regex != NULL) gw_regex_destroy(ot->accepted_smsc_regex);
+        if (ot->accepted_account_regex != NULL) gw_regex_destroy(ot->accepted_account_regex);
         if (ot->allowed_prefix_regex != NULL) gw_regex_destroy(ot->allowed_prefix_regex);
         if (ot->denied_prefix_regex != NULL) gw_regex_destroy(ot->denied_prefix_regex);
         if (ot->allowed_receiver_prefix_regex != NULL) gw_regex_destroy(ot->allowed_receiver_prefix_regex);
@@ -1241,10 +1231,9 @@ static int check_num_args(URLTranslation *t, List *words)
 /*
  * checks if a request matches the parameters of a URL-Translation, e.g. whether or not 
  * a user is allowed to use certain services. returns 0 if allowed, -1 if not.
- * reject will be set to 1 is a number is rejected due to white/black-lists.
  */
-static int check_allowed_translation(URLTranslation *t, 
-                  Octstr *smsc, Octstr *sender, Octstr *receiver, int *reject)
+static int check_allowed_translation(URLTranslation *t,
+                  Octstr *smsc, Octstr *sender, Octstr *receiver, Octstr *account)
 {
     const int IS_ALLOWED = 0;
     const int NOT_ALLOWED = -1;
@@ -1256,6 +1245,15 @@ static int check_allowed_translation(URLTranslation *t,
         return NOT_ALLOWED;
 
     if (smsc && t->accepted_smsc_regex && gw_regex_match_pre( t->accepted_smsc_regex, smsc) == 0)
+        return NOT_ALLOWED;
+
+    /* if account_id set and accepted_account exist, accept
+     * translation only if smsc id is in accept string
+     */
+    if (account && t->accepted_account && !gwlist_search(t->accepted_account, account, octstr_item_match))
+        return NOT_ALLOWED;
+
+    if (account && t->accepted_account_regex && gw_regex_match_pre( t->accepted_account_regex, account) == 0)
         return NOT_ALLOWED;
 
     /* Have allowed for sender */
@@ -1289,22 +1287,18 @@ static int check_allowed_translation(URLTranslation *t,
         return NOT_ALLOWED;
 
     if (t->white_list && numhash_find_number(t->white_list, sender) < 1) {
-        *reject = 1;
         return NOT_ALLOWED;
     }
 
     if (t->white_list_regex && gw_regex_match_pre(t->white_list_regex, sender) == 0) {
-        *reject = 1;
         return NOT_ALLOWED;
     }   
 
     if (t->black_list && numhash_find_number(t->black_list, sender) == 1) {
-        *reject = 1;
         return NOT_ALLOWED;
     }
 
     if (t->black_list_regex && gw_regex_match_pre(t->black_list_regex, sender) == 1) {
-        *reject = 1;
         return NOT_ALLOWED;
     }   
 
@@ -1332,129 +1326,97 @@ static int check_allowed_translation(URLTranslation *t,
  * are returned in a list
  * 
  */
-static List* get_matching_translations(URLTranslationList *trans, Octstr *word) 
+static List *get_matching_translations(URLTranslationList *trans, Octstr *msg) 
 {
     List *list;
-    /*char *tmp_word;*/
-    int i;
-    size_t n_match = 1;
-    regmatch_t p_match[10];
+    long i;
     URLTranslation *t;
 
-    gw_assert(trans != NULL && word != NULL);
+    gw_assert(trans != NULL && msg != NULL);
 
     list = gwlist_create();
     for (i = 0; i < gwlist_len(trans->list); ++i) {
         t = gwlist_get(trans->list, i);
-        if (t->keyword == NULL) 
-	    continue;
+        
+        if (t->keyword_regex == NULL)
+            continue;
 
-        /* if regex feature is used try to match */
-        if ((t->keyword_regex != NULL) && (gw_regex_exec(t->keyword_regex, word, n_match, p_match, 0) == 0))
+        if (gw_regex_match_pre(t->keyword_regex, msg) == 1) {
+            debug("", 0, "match found: %s", octstr_get_cstr(t->name));
             gwlist_append(list, t);
-
-        /* otherwise look for exact match */
-        if (octstr_compare(t->keyword, word) == 0) 
-            gwlist_append(list, t);
-	}
+        } else {
+            debug("", 0, "no match found: %s", octstr_get_cstr(t->name));
+        }
+    }
+    
     return list;
 }
 
 /*
  * Find the appropriate translation 
  */
-static URLTranslation *find_translation(URLTranslationList *trans, 
-                    List *words, Octstr *smsc, Octstr *sender, Octstr *receiver, int *reject)
+static URLTranslation *find_translation(URLTranslationList *trans, Msg *msg)
 {
-    Octstr *keyword;
-    int i, n;
-    URLTranslation *t;
-    List *list;
+    Octstr *data;
+    int i;
+    URLTranslation *t = NULL;
+    List *list, *words;
 
-    n = gwlist_len(words);
-    if (n == 0)
-        return NULL;
-    n = 1;
+    /* convert tolower and try to match */
+    data = octstr_duplicate(msg->sms.msgdata);
+    octstr_convert_range(data, 0, octstr_len(data), tolower);
+    i = 0;
+    while((i = octstr_search_char(data, 0, i)) != -1 && i < octstr_len(data) - 1) {
+        octstr_delete(data, i, 1);
+    }
+    
+    list = get_matching_translations(trans, data);
+    words = octstr_split_words(data);
 
-    keyword = gwlist_get(words, 0);
-    keyword = octstr_duplicate(keyword);
-    octstr_convert_range(keyword, 0, octstr_len(keyword), tolower);
-
-    list = get_matching_translations(trans, keyword);
-    /*
-      list now contains all translations where the keyword of the sms matches the
-      pattern defined by the tranlsation's keyword
-    */
-    t = NULL;
+    /**
+     * List now contains all translations where the keyword of the sms 
+     * matches the pattern defined by the tranlsation's keyword.
+     */
     for (i = 0; i < gwlist_len(list); ++i) {
         t = gwlist_get(list, i);
 
-        if (check_allowed_translation(t, smsc, sender, receiver, reject) == 0
+        /* TODO check_num_args, do we really need this??? */
+        if (check_allowed_translation(t, msg->sms.smsc_id, msg->sms.sender, msg->sms.receiver, msg->sms.account) == 0
             && check_num_args(t, words) == 0)
-	    break;
+            break;
 
-	t = NULL;
+        t = NULL;
     }
 
-    /* Only return reject if there's only blacklisted smsc's */
-    if(t != NULL)
-	*reject = 0;
-
-    octstr_destroy(keyword);    
+    octstr_destroy(data);
+    gwlist_destroy(words, octstr_destroy_item);
     gwlist_destroy(list, NULL);
+    
     return t;
 }
 
 
 static URLTranslation *find_default_translation(URLTranslationList *trans,
 						Octstr *smsc, Octstr *sender, Octstr *receiver,
-						int *reject)
+						Octstr *account)
 {
     URLTranslation *t;
     int i;
     List *list;
 
-    *reject = 0;
-
-    list = dict_get(trans->dict, octstr_imm("default"));
+    list = trans->defaults;
     t = NULL;
     for (i = 0; i < gwlist_len(list); ++i) {
 	t = gwlist_get(list, i);
 
-    if (check_allowed_translation(t, smsc, sender, receiver, reject) == 0)
-        break;
+        if (check_allowed_translation(t, smsc, sender, receiver, account) == 0)
+            break;
 
-	    t = NULL;
+	t = NULL;
     }
 
-    /* Only return reject if there's only blacklisted smsc's */
-    if(t != NULL)
-	*reject = 0;
     return t;
 }
-
-static URLTranslation *find_black_list_translation(URLTranslationList *trans,
-						Octstr *smsc)
-{
-    URLTranslation *t;
-    int i;
-    List *list;
-
-    list = dict_get(trans->dict, octstr_imm("black-list"));
-    t = NULL;
-    for (i = 0; i < gwlist_len(list); ++i) {
-	t = gwlist_get(list, i);
-	if (smsc && t->accepted_smsc) {
-	    if (!gwlist_search(t->accepted_smsc, smsc, octstr_item_match)) {
-		t = NULL;
-		continue;
-	    }
-	}
-	break;
-    }
-    return t;
-}
-
 
 /*
  * Count the number of times `pat' occurs in `str'.

@@ -1,7 +1,7 @@
 /* ==================================================================== 
  * The Kannel Software License, Version 1.0 
  * 
- * Copyright (c) 2001-2005 Kannel Group  
+ * Copyright (c) 2001-2009 Kannel Group  
  * Copyright (c) 1998-2001 WapIT Ltd.   
  * All rights reserved. 
  * 
@@ -106,6 +106,7 @@ void bb_smscconn_send_failed(SMSCConn *conn, Msg *sms, int reason, Octstr *reply
 
 enum {
     SMSCCONN_SUCCESS = 0,
+    SMSCCONN_QUEUED,
     SMSCCONN_FAILED_SHUTDOWN,
     SMSCCONN_FAILED_REJECTED,
     SMSCCONN_FAILED_MALFORMED,

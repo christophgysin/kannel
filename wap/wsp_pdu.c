@@ -1,7 +1,7 @@
 /* ==================================================================== 
  * The Kannel Software License, Version 1.0 
  * 
- * Copyright (c) 2001-2005 Kannel Group  
+ * Copyright (c) 2001-2009 Kannel Group  
  * Copyright (c) 1998-2001 WapIT Ltd.   
  * All rights reserved. 
  * 
@@ -322,7 +322,7 @@ Octstr *wsp_pdu_pack(WSP_PDU *pdu) {
 }
 
 void wsp_pdu_dump(WSP_PDU *pdu, int level) {
-	unsigned char *dbg = "wap.wsp";
+	char *dbg = "wap.wsp";
 
 	switch (pdu->type) {
 #define PDU(name, docstring, fields, is_valid) \

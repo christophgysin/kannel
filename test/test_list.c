@@ -1,7 +1,7 @@
 /* ==================================================================== 
  * The Kannel Software License, Version 1.0 
  * 
- * Copyright (c) 2001-2005 Kannel Group  
+ * Copyright (c) 2001-2009 Kannel Group  
  * Copyright (c) 1998-2001 WapIT Ltd.   
  * All rights reserved. 
  * 
@@ -78,7 +78,6 @@ static int my_sort_cmp(const void *a, const void *b)
 int main(void)
 {
     List *list;
-    uuid_t *uid1, *uid2;
     char id[UUID_STR_LEN + 1];
     int i;
      

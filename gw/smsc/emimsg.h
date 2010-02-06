@@ -1,7 +1,7 @@
 /* ==================================================================== 
  * The Kannel Software License, Version 1.0 
  * 
- * Copyright (c) 2001-2005 Kannel Group  
+ * Copyright (c) 2001-2009 Kannel Group  
  * Copyright (c) 1998-2001 WapIT Ltd.   
  * All rights reserved. 
  * 
@@ -98,14 +98,22 @@ enum {
 };
 
 
+/* Create an EMI msg struct with operation type OT and TRN */
 struct emimsg *emimsg_create_op(int ot, int trn, Octstr *whoami);
 
 
+/* Create an empty EMI msg struct as reply */
 struct emimsg *emimsg_create_reply(int ot, int trn, int positive,
 		Octstr *whoami);
 
 
+/* Destroy an EMI msg struct */
 void emimsg_destroy(struct emimsg *emimsg);
+
+
+/* Duplicate an EMI msg struct */ 
+struct emimsg *emimsg_duplicate(struct emimsg *emimsg);
+
 
 
 /* Create an emimsg struct from the string. */

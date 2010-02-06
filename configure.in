@@ -1,7 +1,7 @@
 dnl /* ==================================================================== 
 dnl  * The Kannel Software License, Version 1.0 
 dnl  * 
-dnl  * Copyright (c) 2001-2005 Kannel Group  
+dnl  * Copyright (c) 2001-2009 Kannel Group  
 dnl  * Copyright (c) 1998-2001 WapIT Ltd.   
 dnl  * All rights reserved. 
 dnl  * 
@@ -105,10 +105,15 @@ AC_CANONICAL_HOST
 dnl Checks for programs.
 
 AC_PROG_CC
+AC_PROG_CC_C99
+if test "$ac_cv_prog_cc_c99" = "no"; then
+    AC_MSG_ERROR(["Kannel requires a C compiler that supports ISO C99."])
+fi
 AC_PROG_INSTALL
 AC_PROG_RANLIB
 AC_PROG_YACC
 AC_PROG_LEX
+AC_CHECK_TOOL(AR, ar)
 AC_PATH_PROG(CONVERT, convert)
 AC_PATH_PROG(PERL, perl)
 
@@ -116,7 +121,7 @@ dnl Apply system specific rules.
 dnl Executable extension for systems that need one, i.e. Cygwin
 dnl Set the LIBTOOL to be used to create libs
 EXE_EXT=""
-LIBTOOL="ar rc"
+LIBTOOL="$AR rc"
 case "$host" in
   *-sun-solaris*) 
     CFLAGS="$CFLAGS -DSunOS=1"
@@ -132,7 +137,7 @@ case "$host" in
     # location libs and includes.
     found=0
     SDK=""
-    for loc in "MacOSX10.4u.sdk" "MacOSX10.4.0.sdk" "MacOSX10.3.9.sdk" \
+    for loc in "MacOSX10.5.sdk" "MacOSX10.4u.sdk" "MacOSX10.4.0.sdk" "MacOSX10.3.9.sdk" \
 	           "MacOSX10.3.0.sdk" "MacOSX10.2.8.sdk" "MacOSX10.1.5.sdk"
   	do 
       if test "$found" = "0" ; then
@@ -176,10 +181,10 @@ AC_C_INLINE
 dnl Check for how to do large files
 
 AC_SYS_LARGEFILE(CFLAGS)
-if test ${ac_cv_sys_file_offset_bits} != no ; then
+if test "${ac_cv_sys_file_offset_bits}" != no ; then
     CFLAGS="$CFLAGS -D_FILE_OFFSET_BITS=${ac_cv_sys_file_offset_bits}"
 fi
-if test ${ac_cv_sys_large_files} != "no" ; then
+if test "${ac_cv_sys_large_files}" != no ; then
     CFLAGS="$CFLAGS -D_LARGE_FILES=${ac_cv_sys_large_files}"
 fi
 
@@ -394,11 +399,13 @@ fi
 
 dnl Implement the --enable-pcre option. This will set HAVE_PCRE in gw-config.h
 dnl accordingly and enable the usage of Perl compatible regular expressions.
+dnl As POSIX regex is a subset of PCRE, we map the posixpcre API calls, so 
+dnl HAVE_REGEX has to be undefined. 
 
 AC_CONFIG_SECTION([Configuring for PCRE support])
 AC_MSG_CHECKING([whether to compile with PCRE support])
 AC_ARG_ENABLE(pcre,
-[  --enable-pcre           enable PCRE regex support [disabled]], [
+[  --enable-pcre           enable PCRE regex support @<:@disabled@:>@], [
   if test "$enableval" != yes; then
     AC_MSG_RESULT(disabled)
   else
@@ -410,18 +417,12 @@ AC_ARG_ENABLE(pcre,
       AC_MSG_CHECKING([PCRE version])
       pcre_version=`$PCRE_CONFIG --version`
       AC_MSG_RESULT([$pcre_version])
+      LIBS="$LIBS `$PCRE_CONFIG --libs-posix`"
+      CFLAGS="$CFLAGS `$PCRE_CONFIG --cflags-posix`"
       AC_MSG_CHECKING([for POSIX regex provider])
-      if test "x$has_posix_regex" != "x" ; then
-        LIBS="$LIBS `$PCRE_CONFIG --libs`"
-        CFLAGS="$CFLAGS `$PCRE_CONFIG --cflags`"
-        AC_MSG_RESULT([system regex])
-      else
-        LIBS="$LIBS `$PCRE_CONFIG --libs-posix`"
-        CFLAGS="$CFLAGS `$PCRE_CONFIG --cflags-posix`"
-        AC_MSG_RESULT([PCRE library])
-        AC_CHECK_HEADERS(pcreposix.h)
-        AC_CHECK_LIB(pcreposix, regcomp)
-      fi        
+      AC_MSG_RESULT([PCRE library])
+      AC_CHECK_HEADERS(pcreposix.h)
+      AC_CHECK_LIB(pcreposix, regcomp)
       AC_CHECK_HEADERS(pcre.h)
       AC_CHECK_FUNCS(pcre_compile)
       AC_DEFINE(HAVE_PCRE)
@@ -449,8 +450,7 @@ for loc in /usr /usr/local; do
   if test "x$found" = "x" ; then 
     for file in ${loc}/lib/sgml/stylesheet/dsssl/docbook/nwalsh/html/docbook.dsl \
 	${loc}/lib/sgml/stylesheets/nwalsh-modular/html/docbook.dsl \
-	${loc}/share/sgml/docbook/dsssl-stylesheets-1.59/html/docbook.dsl \
-	${loc}/share/sgml/docbook/dsssl-stylesheets-1.77/html/docbook.dsl \
+	${loc}/share/sgml/docbook/dsssl-stylesheets-1.*/html/docbook.dsl \
 	${loc}/share/sgml/docbook/dsssl-stylesheets/html/docbook.dsl \
 	${loc}/share/sgml/docbook/stylesheet/dsssl/modular/html/docbook.dsl \
         ${loc}/share/sgml/docbook/dsssl/modular/html/docbook.dsl ; do
@@ -466,8 +466,7 @@ for loc in /usr /usr/local; do
   if test "x$found" = "x" ; then 
     for file in ${loc}/lib/sgml/stylesheet/dsssl/docbook/nwalsh/print/docbook.dsl \
 	${loc}/lib/sgml/stylesheets/nwalsh-modular/print/docbook.dsl \
-	${loc}/share/sgml/docbook/dsssl-stylesheets-1.59/print/docbook.dsl \
-	${loc}/share/sgml/docbook/dsssl-stylesheets-1.77/print/docbook.dsl \
+	${loc}/share/sgml/docbook/dsssl-stylesheets-1.*/print/docbook.dsl \
 	${loc}/share/sgml/docbook/dsssl-stylesheets/print/docbook.dsl \
 	${loc}/share/sgml/docbook/stylesheet/dsssl/modular/print/docbook.dsl \
         ${loc}/share/sgml/docbook/dsssl/modular/print/docbook.dsl ; do
@@ -481,7 +480,7 @@ done
 dnl Implement --enable-warnings option.
 
 AC_ARG_ENABLE(warnings,
-[  --enable-warnings       enable compilation warnings [disabled]], [
+[  --enable-warnings       enable compilation warnings @<:@disabled@:>@], [
   echo enabling compilation warnings
   if test -n "$GCC"; then
     CFLAGS="$CFLAGS -Wall"
@@ -501,7 +500,7 @@ dnl Implement --enable-docs option.
 AC_SUBST(DOCSTARGET)
 
 AC_ARG_ENABLE(docs,
-[  --enable-docs           enable building of documentation [enabled]], [
+[  --enable-docs           enable building of documentation @<:@enabled@:>@], [
   if test "$enableval" = "yes"
   then
       DOCSTARGET="docs"
@@ -535,7 +534,7 @@ AC_SUBST(DOCDRAFTS)
 DOCDRAFTS="IGNORE"
 
 AC_ARG_ENABLE(drafts,
-[  --enable-drafts         enable building of documentation drafts [disabled]], [
+[  --enable-drafts         enable building of documentation drafts @<:@disabled@:>@], [
   if test "$enableval" = "yes"
   then
       DOCDRAFTS="INCLUDE"
@@ -558,7 +557,7 @@ dnl Implement --with-suffix=version option.
 SUFFIX=""
 
 AC_ARG_WITH(suffix,
-[  --with-suffix           set suffix for binaries [foobox-\$VERSION]], [
+[  --with-suffix=VERSION   set suffix for binaries @<:@foobox-VERSION@:>@], [
   if test "x$withval" != "x" ; then
   	SUFFIX=$withval
   fi
@@ -567,7 +566,7 @@ AC_ARG_WITH(suffix,
 dnl Implement --enable-suffix option.
 
 AC_ARG_ENABLE(suffix,
-[  --enable-suffix         enable suffix for binaries [disabled]], [
+[  --enable-suffix         enable suffix for binaries @<:@disabled@:>@], [
   if test "$enableval" = "yes" ; then
     SUFFIX="-$VERSION"
   else
@@ -587,10 +586,10 @@ AC_SUBST(SUFFIX)
 dnl Implement --with-defaults=speed/debug option.
 
 AC_ARG_WITH(defaults,
-[  --with-defaults         set default configure options: speed/debug [speed]
+[  --with-defaults=OPTION  set default configure options: speed/debug @<:@speed@:>@
                           this will set assertion checking and malloc wrapper accordingly
-			  speed = native malloc + no assertions
-			  debug = checking malloc + assertions], [
+			    speed = native malloc + no assertions
+			    debug = checking malloc + assertions], [
   case "$withval" in
   speed) assertiondefault=no
          mallocdefault=native
@@ -613,7 +612,7 @@ dnl Implement --with-malloc=[native|check|slow] option.
 
 AC_MSG_CHECKING(which malloc to use)
 AC_ARG_WITH(malloc,
-[  --with-malloc           select malloc wrapper to use: native/check/slow [native]], [
+[  --with-malloc=OPTION    select malloc wrapper to use: native/check/slow @<:@native@:>@], [
   case "$withval" in
   native) AC_DEFINE(USE_GWMEM_NATIVE)
           AC_MSG_RESULT(native malloc)
@@ -662,7 +661,7 @@ AC_ARG_ENABLE(assertions,
 dnl Implement the --enable-pam option.
 
 AC_ARG_ENABLE(pam,
-[  --enable-pam	          enable pam authentication [disabled]], [
+[  --enable-pam	          enable PAM authentication @<:@disabled@:>@], [
     if test "$enableval" = "yes"
     then
 	AC_CHECK_LIB(pam, pam_end)
@@ -674,15 +673,15 @@ AC_ARG_ENABLE(pam,
     fi
 ])
 case "$PAMTARGET" in
-no-pam) echo pam authentication is disabled. ;;
-pam) echo pam authentication is enabled. ;;
+no-pam) echo PAM authentication is disabled. ;;
+pam) echo PAM authentication is enabled. ;;
 esac
 
 
 dnl Implement --enable-debug option.
 
 AC_ARG_ENABLE(debug,
-[  --enable-debug	  enable non-reentrant debugging for wmls compiler [disabled]], [
+[  --enable-debug	  enable non-reentrant debugging for wmls compiler @<:@disabled@:>@], [
   echo enabling WMLScript compiler debugging
   if test -n "$GCC"; then
     CFLAGS="$CFLAGS -Wall"
@@ -694,7 +693,7 @@ AC_ARG_ENABLE(debug,
 dnl Implement --enable-localtime option.
 
 AC_ARG_ENABLE(localtime,
-[  --enable-localtime	  log file time stamps in local time, not GMT [enabled]], [
+[  --enable-localtime	  log file time stamps in local time, not GMT @<:@enabled@:>@], [
   if test "$enableval" = yes; then
       echo enabling local time
       AC_DEFINE(LOG_TIMESTAMP_LOCALTIME)
@@ -718,7 +717,7 @@ AC_ARG_ENABLE(mutex-stats,
 dnl --disable-cookies option.
 
 AC_ARG_ENABLE(cookies,
-[  --disable-cookies       disable cookie support for WSP [enabled]], [
+[  --disable-cookies       disable cookie support for WSP @<:@enabled@:>@], [
   if test "$enableval" = yes; then
     echo enabling cookies
     AC_DEFINE(ENABLE_COOKIES)
@@ -734,7 +733,7 @@ AC_ARG_ENABLE(cookies,
 dnl --disable-keepalive option.
 
 AC_ARG_ENABLE(keepalive,
-[  --disable-keepalive     disable HTTP/1.1 keep-alive support [enabled]], [
+[  --disable-keepalive     disable HTTP/1.1 keep-alive support @<:@enabled@:>@], [
   if test "$enableval" = yes; then
     echo enabling HTTP/1.1 keep-alive
     AC_DEFINE(USE_KEEPALIVE)
@@ -750,7 +749,7 @@ AC_ARG_ENABLE(keepalive,
 dnl --enable-start-stop-daemon option.
 
 AC_ARG_ENABLE(start-stop-daemon,
-[  --enable-start-stop-daemon  compile the start-stop-daemon program [disabled]], [
+[  --enable-start-stop-daemon  compile the start-stop-daemon program @<:@disabled@:>@], [
   if test "$enableval" = yes; then
      STARTSTOPDAEMONSRC="utils/start-stop-daemon.c"
   fi
@@ -783,8 +782,8 @@ dnl Implement the --with-ssl option.
 
 AC_CONFIG_SECTION([Configuring OpenSSL support])
 AC_ARG_WITH(ssl,
-[  --with-ssl[=DIR]        where to look for OpenSSL libs and header files
-                          DIR points to the installation [/usr/local/ssl]],
+[  --with-ssl[=DIR]          where to look for OpenSSL libs and header files
+                          DIR points to the installation @<:@/usr/local/ssl@:>@],
 [ if test -d "$withval"; then
     ssllib="$withval/lib";
     sslinc="$withval/include"
@@ -798,7 +797,7 @@ dnl Implement --enable-ssl option.
 
 AC_MSG_CHECKING([whether to compile with SSL support])
 AC_ARG_ENABLE(ssl,
-[  --enable-ssl            enable SSL client and server support [enabled]], [
+[  --enable-ssl            enable SSL client and server support @<:@enabled@:>@], [
   if test "$enableval" = no ; then
     AC_MSG_RESULT(disabled)
     ssl=no
@@ -812,7 +811,7 @@ AC_ARG_ENABLE(ssl,
 if test "$ssl" = "yes" ; then
   dnl test only if --with-ssl has not been used
   if test "x$ssllib" = "x" && test "x$sslinc" = "x"; then
-    for loc in /usr/lib /usr/local/ssl/lib /usr/local/openssl/lib; do
+    for loc in /usr/lib /usr/lib64 /usr/local/ssl/lib /usr/local/openssl/lib; do
       if test -f "$loc/libssl.a" -o -f "$loc/libssl.dylib" ; then
         ssllib="$loc"
       fi
@@ -893,14 +892,14 @@ dnl accordingly and enable the usage of the libmysqlclient routines.
 
 AC_MSG_CHECKING([whether to compile with MySQL support])
 AC_ARG_WITH(mysql,
-[  --with-mysql            enable MySQL storage [disabled]], [
+[  --with-mysql            enable MySQL storage @<:@disabled@:>@], [
 if test "$withval" != yes ; then
     AC_MSG_RESULT(disabled)
 else
     dnl Implement the --with-mysql-dir option.
     AC_ARG_WITH(mysql-dir,
     [  --with-mysql-dir=DIR    where to look for MySQL libs and header files
-                          DIR points to the installation [/usr/local/mysql] ],
+                          DIR points to the installation @<:@/usr/local/mysql@:>@],
     [
         mysqlloc=""
         if test -d "$withval" ; then
@@ -975,7 +974,7 @@ dnl accordingly and enable the usage of the libsdb routines.
 
 AC_MSG_CHECKING([whether to compile with LibSDB support])
 AC_ARG_WITH(sdb,
-[  --with-sdb              enable LibSDB storage [disabled]], [
+[  --with-sdb              enable LibSDB storage @<:@disabled@:>@], [
 if test "$withval" != yes; then
   AC_MSG_RESULT(disabled)
 else
@@ -1004,12 +1003,12 @@ fi
 ])
 
 
-dnl Implement the --with-sqlite option. This will set HAVE_SQLITE in gw-config.h
+dnl Implement the --with-sqlite2 option. This will set HAVE_SQLITE in gw-config.h
 dnl accordingly and enable the usage of the libsqlite routines.
 
-AC_MSG_CHECKING([whether to compile with SQLite support])
-AC_ARG_WITH(sqlite,
-[  --with-sqlite           enable SQLite storage [disabled]], [
+AC_MSG_CHECKING([whether to compile with SQLite2 support])
+AC_ARG_WITH(sqlite2,
+[  --with-sqlite2          enable SQLite2 storage @<:@disabled@:>@], [
 if test "$withval" != yes; then
     AC_MSG_RESULT(disabled)
 else
@@ -1020,11 +1019,11 @@ else
       [LIBS="$LIBS -lsqlite" 
        AC_DEFINE(HAVE_SQLITE)
        SQLITE="yes"], 
-      [AC_MSG_ERROR([Unable to find SQLite client libraries])]
+      [AC_MSG_ERROR([Unable to find SQLite2 client libraries])]
     )
     AC_PATH_PROGS(SQLITE, sqlite, no)
     if test "$SQLITE" = "no"; then
-      AC_MSG_WARN([Unable to find sqlite in path for SQLite support])
+      AC_MSG_WARN([Unable to find sqlite in path for SQLite2 support])
     else 
       AC_MSG_CHECKING([sqlite version])
       sqlite_version=`$SQLITE -version`
@@ -1041,7 +1040,7 @@ dnl accordingly and enable the usage of the libsqlite3 routines.
 
 AC_MSG_CHECKING([whether to compile with SQLite3 support])
 AC_ARG_WITH(sqlite3,
-[  --with-sqlite3          enable SQLite3 storage [disabled]], [
+[  --with-sqlite3          enable SQLite3 storage @<:@disabled@:>@], [
 if test "$withval" != yes; then
     AC_MSG_RESULT(disabled)
 else
@@ -1073,7 +1072,7 @@ dnl accordingly and enable the usage of the OCI routines.
 
 AC_MSG_CHECKING([whether to compile with Oracle support])
 AC_ARG_WITH(oracle,
-[  --with-oracle           enable ORACLE storage [disabled]],
+[  --with-oracle           enable ORACLE storage @<:@disabled@:>@],
 [
 if test "$withval" != yes ; then
     AC_MSG_RESULT(disabled)
@@ -1103,15 +1102,19 @@ else
         do
                 LIBS="$LIBS -L$a"
         done
-        AC_CHECK_LIB(clntsh,OCIEnvCreate,[ LIBS="$LIBS -lclntsh" ],exit)
-        if test -f "$ORACLE_HOME/lib/libwtc8.so"
-        then
-                AC_CHECK_LIB(wtc8,wtcstu,[ LIBS="$LIBS -lwtc8" ],AC_MSG_ERROR([Oracle libwtc8.so not found]))
-        else
-                AC_CHECK_LIB(wtc9,wtcstu,[ LIBS="$LIBS -lwtc9" ],AC_MSG_ERROR([Oracle libwtc9.so not found]))
-        fi
 
-    AC_DEFINE(HAVE_ORACLE)
+        dnl Check for Oracle 10g instant client
+        AC_CHECK_LIB(clntsh,OCIEnvCreate,[ LIBS="$LIBS -lclntsh" ],
+          AC_CHECK_LIB(clntsh,OCIEnvCreate,[ LIBS="$LIBS -lclntsh -lnnz10" ],exit)
+        )
+
+        dnl Beware that Oracle 10g doesn't use anymore the libwtcX.so libs,
+        dnl so we don't break hard in case they are not present.
+        AC_CHECK_LIB(wtc8,wtcstu,[ LIBS="$LIBS -lwtc8" ],
+          AC_CHECK_LIB(wtc9,wtcstu,[ LIBS="$LIBS -lwtc9" ], true)
+        )
+
+    AC_DEFINE(HAVE_ORACLE, 1, [Do we have Oracle])
     AC_MSG_CHECKING([whether to compile with Oracle support])
     AC_MSG_RESULT(yes)
 fi
@@ -1124,14 +1127,14 @@ dnl accordingly and enable the usage of the libpq routines.
 
 AC_MSG_CHECKING([whether to compile with PostgresSQL support])
 AC_ARG_WITH(pgsql,
-[  --with-pgsql            enable PostgreSQL storage [disabled]], [
+[  --with-pgsql            enable PostgreSQL storage @<:@disabled@:>@], [
 if test "$withval" != yes ; then
     AC_MSG_RESULT(disabled)
 else
     dnl Implement the --with-pgsql-dir option.
     AC_ARG_WITH(pgsql-dir,
     [  --with-pgsql-dir=DIR    where to look for PostgreSQL libs and header files
-                          DIR points to the installation [/usr/local/pgsql] ],
+                          DIR points to the installation @<:@/usr/local/pgsql@:>@],
     [
     	pgsqlloc=""
     	if test -d "$withval" ; then
@@ -1197,14 +1200,12 @@ dnl Implement the --with-wtls option.
 dnl Check to see if we should include WTLS support, and which library to use.
 
 AC_ARG_WITH(wtls,
-[  --with-wtls[=TYPE]      select WTLS version to use: openssl/baltimore], 
+[  --with-wtls@<:@=TYPE@:>@      select WTLS version to use: openssl/baltimore], 
 [ AC_CONFIG_SECTION([Configuring WTLS support]) 
   AC_MSG_CHECKING([for WTLS library])
   AC_MSG_RESULT($withval)
   case "$withval" in
   openssl) 
- 	OLDLIBS="$LIBS"
-	LIBS="$LIBS -L/usr/local/ssl/lib -lcrypto"
     AC_CHECK_LIB(crypto, RSA_new,
     [ AC_CHECK_HEADERS(openssl/objects.h openssl/rc5.h, 
         AC_DEFINE(HAVE_WTLS_OPENSSL),

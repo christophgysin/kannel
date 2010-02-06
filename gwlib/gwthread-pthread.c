@@ -1,7 +1,7 @@
 /* ==================================================================== 
  * The Kannel Software License, Version 1.0 
  * 
- * Copyright (c) 2001-2005 Kannel Group  
+ * Copyright (c) 2001-2009 Kannel Group  
  * Copyright (c) 1998-2001 WapIT Ltd.   
  * All rights reserved. 
  * 
@@ -728,6 +728,7 @@ int gwthread_poll(struct pollfd *fds, long numfds, double timeout)
     pollfds = gw_malloc((numfds + 1) * sizeof(*pollfds));
     pollfds[0].fd = threadinfo->wakefd_recv;
     pollfds[0].events = POLLIN;
+    pollfds[0].revents = 0;
     memcpy(pollfds + 1, fds, numfds * sizeof(*pollfds));
 
     milliseconds = timeout * 1000;
@@ -776,6 +777,41 @@ void gwthread_sleep(double seconds)
     }
     if (ret == 1) {
         flushpipe(pollfd.fd);
+    }
+}
+
+
+void gwthread_sleep_micro(double dseconds)
+{
+    fd_set fd_set_recv;
+    struct threadinfo *threadinfo;
+    int fd;
+    int ret;
+
+    threadinfo = getthreadinfo();
+    fd = threadinfo->wakefd_recv;
+
+    FD_ZERO(&fd_set_recv);
+    FD_SET(fd, &fd_set_recv);
+
+    if (dseconds < 0) {
+        ret = select(fd + 1, &fd_set_recv, NULL, NULL, NULL);
+    } else {
+        struct timeval timeout;
+        timeout.tv_sec = dseconds;
+        timeout.tv_usec = (dseconds - timeout.tv_sec) * 1000000;
+
+        ret = select(fd + 1, &fd_set_recv, NULL, NULL, &timeout);
+    }
+
+    if (ret < 0) {
+        if (errno != EINTR && errno != EAGAIN) {
+            warning(errno, "gwthread_sleep_micro: error in select()");
+        }
+    }
+
+    if (FD_ISSET(fd, &fd_set_recv)) {
+        flushpipe(fd);
     }
 }
 

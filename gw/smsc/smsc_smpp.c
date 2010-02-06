@@ -1,7 +1,7 @@
 /* ==================================================================== 
  * The Kannel Software License, Version 1.0 
  * 
- * Copyright (c) 2001-2005 Kannel Group  
+ * Copyright (c) 2001-2009 Kannel Group  
  * Copyright (c) 1998-2001 WapIT Ltd.   
  * All rights reserved. 
  * 
@@ -77,8 +77,9 @@
 #include "bb_smscconn_cb.h"
 #include "sms.h"
 #include "dlr.h"
+#include "bearerbox.h"
 
-#define SMPP_DEFAULT_CHARSET	"windows-1252"
+#define SMPP_DEFAULT_CHARSET "UTF-8"
 
 /*
  * Select these based on whether you want to dump SMPP PDUs as they are
@@ -131,7 +132,7 @@
 typedef struct {
     long transmitter;
     long receiver;
-    List *msgs_to_send;
+    gw_prioqueue_t *msgs_to_send;
     Dict *sent_msgs; 
     List *received_msgs; 
     Counter *message_id_counter; 
@@ -223,9 +224,9 @@ static SMPP *smpp_create(SMSCConn *conn, Octstr *host, int transmit_port,
     smpp = gw_malloc(sizeof(*smpp)); 
     smpp->transmitter = -1; 
     smpp->receiver = -1; 
-    smpp->msgs_to_send = gwlist_create(); 
+    smpp->msgs_to_send = gw_prioqueue_create(sms_priority_compare); 
     smpp->sent_msgs = dict_create(max_pending_submits, NULL); 
-    gwlist_add_producer(smpp->msgs_to_send); 
+    gw_prioqueue_add_producer(smpp->msgs_to_send); 
     smpp->received_msgs = gwlist_create(); 
     smpp->message_id_counter = counter_create(); 
     counter_increase(smpp->message_id_counter);
@@ -267,7 +268,7 @@ static SMPP *smpp_create(SMSCConn *conn, Octstr *host, int transmit_port,
 static void smpp_destroy(SMPP *smpp) 
 { 
     if (smpp != NULL) { 
-        gwlist_destroy(smpp->msgs_to_send, msg_destroy_item); 
+        gw_prioqueue_destroy(smpp->msgs_to_send, msg_destroy_item); 
         dict_destroy(smpp->sent_msgs); 
         gwlist_destroy(smpp->received_msgs, msg_destroy_item); 
         counter_destroy(smpp->message_id_counter); 
@@ -349,11 +350,12 @@ static long convert_addr_from_pdu(Octstr *id, Octstr *addr, long ton, long npi, 
          *   2) the whole source addr consist of digits, exception '+' in front
          */
         if (octstr_len(addr) < 7) {
-            error(0, "SMPP[%s]: Mallformed addr `%s', expected at least 7 digits. ",
+            /* We consider this as a "non-hard" condition, since there "may"
+             * be international numbers routable that are < 7 digits. Think
+             * of 2 digit country code + 3 digit emergency code. */
+            warning(0, "SMPP[%s]: Mallformed addr `%s', generally expected at least 7 digits. ",
                      octstr_get_cstr(id),
                      octstr_get_cstr(addr));
-            reason = SMPP_ESME_RINVSRCADR;
-            goto error;
         } else if (octstr_get_char(addr, 0) == '+' &&
                    !octstr_check_range(addr, 1, 256, gw_isdigit)) {
             error(0, "SMPP[%s]: Mallformed addr `%s', expected all digits. ",
@@ -389,7 +391,7 @@ static long convert_addr_from_pdu(Octstr *id, Octstr *addr, long ton, long npi, 
         }
         if (alt_addr_charset) {
             if (octstr_str_case_compare(alt_addr_charset, "gsm") == 0)
-		charset_gsm_to_latin1(addr);
+		charset_gsm_to_utf8(addr);
             else if (charset_convert(addr, octstr_get_cstr(alt_addr_charset), SMPP_DEFAULT_CHARSET) != 0)
                 error(0, "Failed to convert address from charset <%s> to <%s>, leave as is.",
                     octstr_get_cstr(alt_addr_charset), SMPP_DEFAULT_CHARSET);
@@ -511,7 +513,7 @@ static Msg *pdu_to_msg(SMPP *smpp, SMPP_PDU *pdu, long *reason)
                              octstr_get_cstr(smpp->alt_charset), SMPP_DEFAULT_CHARSET);
                 msg->sms.coding = DC_7BIT;
             } else { /* assume GSM 03.38 7-bit alphabet */
-                charset_gsm_to_latin1(msg->sms.msgdata);
+                charset_gsm_to_utf8(msg->sms.msgdata);
                 msg->sms.coding = DC_7BIT;
             }
             break;
@@ -524,13 +526,13 @@ static Msg *pdu_to_msg(SMPP *smpp, SMPP_PDU *pdu, long *reason)
         case 0x05: /* JIS - what do I do with that ? */
             break;
         case 0x06: /* Cyrllic - iso-8859-5, I'll convert to unicode */
-            if (charset_convert(msg->sms.msgdata, "ISO-8859-5", "UCS-2BE") != 0)
-                error(0, "Failed to convert msgdata from cyrllic to UCS-2, will leave as is");
-            msg->sms.coding = DC_UCS2; break;
+            if (charset_convert(msg->sms.msgdata, "ISO-8859-5", "UTF-8") != 0)
+                error(0, "Failed to convert msgdata from cyrllic to UTF-8, will leave as is");
+            msg->sms.coding = DC_7BIT; break;
         case 0x07: /* Hebrew iso-8859-8, I'll convert to unicode */
-            if (charset_convert(msg->sms.msgdata, "ISO-8859-8", "UCS-2BE") != 0)
-                error(0, "Failed to convert msgdata from hebrew to UCS-2, will leave as is");
-            msg->sms.coding = DC_UCS2; break;
+            if (charset_convert(msg->sms.msgdata, "ISO-8859-8", "UTF-8") != 0)
+                error(0, "Failed to convert msgdata from hebrew to UTF-8, will leave as is");
+            msg->sms.coding = DC_7BIT; break;
         case 0x08: /* unicode UCS-2, yey */
             msg->sms.coding = DC_UCS2; break;
 
@@ -549,7 +551,7 @@ static Msg *pdu_to_msg(SMPP *smpp, SMPP_PDU *pdu, long *reason)
                 msg->sms.coding = DC_8BIT;
             else if (msg->sms.coding == DC_7BIT || msg->sms.coding == DC_UNDEF) { /* assume GSM 7Bit , reencode */
                 msg->sms.coding = DC_7BIT;
-                charset_gsm_to_latin1(msg->sms.msgdata);
+                charset_gsm_to_utf8(msg->sms.msgdata);
             }
     }
     msg->sms.pid = pdu->u.deliver_sm.protocol_id;
@@ -661,7 +663,7 @@ static Msg *data_sm_to_msg(SMPP *smpp, SMPP_PDU *pdu, long *reason)
                              octstr_get_cstr(smpp->alt_charset), SMPP_DEFAULT_CHARSET);
                 msg->sms.coding = DC_7BIT;
             } else { /* assume GSM 03.38 7-bit alphabet */
-                charset_gsm_to_latin1(msg->sms.msgdata);
+                charset_gsm_to_utf8(msg->sms.msgdata);
                 msg->sms.coding = DC_7BIT;
             }
             break;
@@ -674,13 +676,13 @@ static Msg *data_sm_to_msg(SMPP *smpp, SMPP_PDU *pdu, long *reason)
         case 0x05: /* JIS - what do I do with that ? */
             break;
         case 0x06: /* Cyrllic - iso-8859-5, I'll convert to unicode */
-            if (charset_convert(msg->sms.msgdata, "ISO-8859-5", "UCS-2BE") != 0)
-                error(0, "Failed to convert msgdata from cyrllic to UCS-2, will leave as is");
-            msg->sms.coding = DC_UCS2; break;
+            if (charset_convert(msg->sms.msgdata, "ISO-8859-5", "UTF-8") != 0)
+                error(0, "Failed to convert msgdata from cyrllic to UTF-8, will leave as is");
+            msg->sms.coding = DC_7BIT; break;
         case 0x07: /* Hebrew iso-8859-8, I'll convert to unicode */
-            if (charset_convert(msg->sms.msgdata, "ISO-8859-8", "UCS-2BE") != 0)
-                error(0, "Failed to convert msgdata from hebrew to UCS-2, will leave as is");
-            msg->sms.coding = DC_UCS2; break;
+            if (charset_convert(msg->sms.msgdata, "ISO-8859-8", "UTF-8") != 0)
+                error(0, "Failed to convert msgdata from hebrew to UTF-8, will leave as is");
+            msg->sms.coding = DC_7BIT; break;
         case 0x08: /* unicode UCS-2, yey */
             msg->sms.coding = DC_UCS2; break;
 
@@ -699,7 +701,7 @@ static Msg *data_sm_to_msg(SMPP *smpp, SMPP_PDU *pdu, long *reason)
                 msg->sms.coding = DC_8BIT;
             else if (msg->sms.coding == DC_7BIT || msg->sms.coding == DC_UNDEF) { /* assume GSM 7Bit , reencode */
                 msg->sms.coding = DC_7BIT;
-                charset_gsm_to_latin1(msg->sms.msgdata);
+                charset_gsm_to_utf8(msg->sms.msgdata);
             }
     }
 
@@ -757,7 +759,7 @@ static SMPP_PDU *msg_to_pdu(SMPP *smpp, Msg *msg)
         pdu->u.submit_sm.source_addr_npi = GSM_ADDR_NPI_E164; /* ISDN number plan */
     }
 
-    if (smpp->autodetect_addr) {
+    if (pdu->u.submit_sm.source_addr && smpp->autodetect_addr) {
         /* lets see if its international or alphanumeric sender */
         if (octstr_get_char(pdu->u.submit_sm.source_addr, 0) == '+') {
             if (!octstr_check_range(pdu->u.submit_sm.source_addr, 1, 256, gw_isdigit)) {
@@ -767,7 +769,7 @@ static SMPP_PDU *msg_to_pdu(SMPP *smpp, Msg *msg)
                     if (octstr_str_case_compare(smpp->alt_addr_charset, "gsm") == 0) {
                         /* @ would break PDU if converted into GSM*/
                         octstr_replace(pdu->u.submit_sm.source_addr, octstr_imm("@"), octstr_imm("?"));
-                        charset_latin1_to_gsm(pdu->u.submit_sm.source_addr);
+                        charset_utf8_to_gsm(pdu->u.submit_sm.source_addr);
                     } else if (charset_convert(pdu->u.submit_sm.source_addr, SMPP_DEFAULT_CHARSET, octstr_get_cstr(smpp->alt_addr_charset)) != 0)
                         error(0, "Failed to convert source_addr from charset <%s> to <%s>, will send as is.",
                                 SMPP_DEFAULT_CHARSET, octstr_get_cstr(smpp->alt_addr_charset));
@@ -785,7 +787,7 @@ static SMPP_PDU *msg_to_pdu(SMPP *smpp, Msg *msg)
                     if (octstr_str_case_compare(smpp->alt_addr_charset, "gsm") == 0) {
                         /* @ would break PDU if converted into GSM */
                         octstr_replace(pdu->u.submit_sm.source_addr, octstr_imm("@"), octstr_imm("?")); 
-                        charset_latin1_to_gsm(pdu->u.submit_sm.source_addr);
+                        charset_utf8_to_gsm(pdu->u.submit_sm.source_addr);
                     } else if (charset_convert(pdu->u.submit_sm.source_addr, SMPP_DEFAULT_CHARSET, octstr_get_cstr(smpp->alt_addr_charset)) != 0)
                         error(0, "Failed to convert source_addr from charset <%s> to <%s>, will send as is.",
                                 SMPP_DEFAULT_CHARSET, octstr_get_cstr(smpp->alt_addr_charset));
@@ -864,7 +866,7 @@ static SMPP_PDU *msg_to_pdu(SMPP *smpp, Msg *msg)
      * only re-encoding if using default smsc charset that is defined via
      * alt-charset in smsc group and if MT is not binary
      */
-    if (msg->sms.coding == DC_7BIT || (msg->sms.coding == DC_UNDEF && octstr_len(msg->sms.udhdata))) {
+    if (msg->sms.coding == DC_7BIT || (msg->sms.coding == DC_UNDEF && octstr_len(msg->sms.udhdata) == 0)) {
         /* 
          * consider 3 cases: 
          *  a) data_coding 0xFX: encoding should always be GSM 03.38 charset 
@@ -872,10 +874,9 @@ static SMPP_PDU *msg_to_pdu(SMPP *smpp, Msg *msg)
          *  c) data_coding 0x00: assume GSM 03.38 charset if alt-charset is not defined
          */
         if ((pdu->u.submit_sm.data_coding & 0xF0) ||
-            (!smpp->alt_charset && pdu->u.submit_sm.data_coding == 0)) {
-            charset_latin1_to_gsm(pdu->u.submit_sm.short_message);
-        }
-        else if (pdu->u.submit_sm.data_coding == 0 && smpp->alt_charset) {
+            (pdu->u.submit_sm.data_coding == 0 && !smpp->alt_charset)) {
+            charset_utf8_to_gsm(pdu->u.submit_sm.short_message);
+        } else if (pdu->u.submit_sm.data_coding == 0 && smpp->alt_charset) {
             /*
              * convert to the given alternative charset
              */
@@ -996,7 +997,7 @@ static void send_messages(SMPP *smpp, Connection *conn, long *pending_submits)
 
     while (*pending_submits < smpp->max_pending_submits) {
     	/* Get next message, quit if none to be sent */
-    	msg = gwlist_extract_first(smpp->msgs_to_send);
+    	msg = gw_prioqueue_remove(smpp->msgs_to_send);
         if (msg == NULL)
             break;
 
@@ -1144,7 +1145,7 @@ static Connection *open_receiver(SMPP *smpp)
 static Msg *handle_dlr(SMPP *smpp, Octstr *destination_addr, Octstr *short_message, Octstr *message_payload, Octstr *receipted_message_id, long message_state)
 {
     Msg *dlrmsg = NULL;
-    Octstr *respstr = NULL, *msgid = NULL, *tmp;
+    Octstr *respstr = NULL, *msgid = NULL, *err = NULL, *tmp;
     int dlrstat = -1;
     
     /* first check for SMPP v3.4 and above */
@@ -1184,18 +1185,23 @@ static Msg *handle_dlr(SMPP *smpp, Octstr *destination_addr, Octstr *short_messa
         long curr = 0, vpos = 0;
         Octstr *stat = NULL;
         char id_cstr[65], stat_cstr[16], sub_d_cstr[13], done_d_cstr[13];
+        char err_cstr[4];
         int sub, dlrvrd, ret;
     
         /* get server message id */
         /* first try sscanf way if thus failed then old way */
         ret = sscanf(octstr_get_cstr(respstr),
-                    "id:%64[^s] sub:%d dlvrd:%d submit date:%12[0-9] done date:%12[0-9] stat:%10[^t^e]",
-                    id_cstr, &sub, &dlrvrd, sub_d_cstr, done_d_cstr, stat_cstr);
-        if (ret == 6) {
+                     "id:%64[^s] sub:%d dlvrd:%d submit date:%12[0-9] done "
+                     "date:%12[0-9] stat:%10[^t^e] err:%3[0-9]",
+                     id_cstr, &sub, &dlrvrd, sub_d_cstr, done_d_cstr, 
+                     stat_cstr, err_cstr);
+        if (ret == 7) {
             msgid = octstr_create(id_cstr);
             octstr_strip_blanks(msgid);
             stat = octstr_create(stat_cstr);
             octstr_strip_blanks(stat);
+            err = octstr_create(err_cstr);
+            octstr_strip_blanks(err);
         }
         else {
             debug("bb.sms.smpp", 0, "SMPP[%s]: Couldnot parse DLR string sscanf way,"
@@ -1216,6 +1222,13 @@ static Msg *handle_dlr(SMPP *smpp, Octstr *destination_addr, Octstr *short_messa
                     stat = octstr_copy(respstr, curr+5, vpos-curr-5);
             } else {
                 stat = NULL;
+            }
+            if ((curr = octstr_search(respstr, octstr_imm("err:"), 0)) != -1) {
+                vpos = octstr_search_char(respstr, ' ', curr);
+                if ((vpos-curr >0) && (vpos != -1))
+                    err = octstr_copy(respstr, curr+4, vpos-curr-4);
+            } else {
+                err = NULL;
             }
         }
         
@@ -1238,8 +1251,7 @@ static Msg *handle_dlr(SMPP *smpp, Octstr *destination_addr, Octstr *short_messa
         else
             dlrstat = DLR_FAIL;
                 
-        if (stat != NULL)
-            octstr_destroy(stat);
+        octstr_destroy(stat);
     }
 
     if (msgid != NULL) {
@@ -1266,9 +1278,9 @@ static Msg *handle_dlr(SMPP *smpp, Octstr *destination_addr, Octstr *short_messa
         } else {
             if ((smpp->smpp_msg_id_type & 0x02) || 
                 (!octstr_check_range(msgid, 0, octstr_len(msgid), gw_isdigit))) {
-                tmp = octstr_format("%lu", strtoll(octstr_get_cstr(msgid), NULL, 16));
+                tmp = octstr_format("%llu", strtoll(octstr_get_cstr(msgid), NULL, 16));
             } else {
-                tmp = octstr_format("%lu", strtoll(octstr_get_cstr(msgid), NULL, 10));
+                tmp = octstr_format("%llu", strtoll(octstr_get_cstr(msgid), NULL, 10));
             }
         }
 
@@ -1286,9 +1298,11 @@ static Msg *handle_dlr(SMPP *smpp, Octstr *destination_addr, Octstr *short_messa
          * we found the delivery report in our storage, so recode the
          * message structure.
          * The DLR trigger URL is indicated by msg->sms.dlr_url.
+         * Add the DLR error code as billing identifier.
          */
         dlrmsg->sms.msgdata = octstr_duplicate(respstr);
         dlrmsg->sms.sms_type = report_mo;
+        dlrmsg->sms.binfo = octstr_duplicate(err);
     } else {
         error(0,"SMPP[%s]: got DLR but could not find message or was not interested "
                 "in it id<%s> dst<%s>, type<%d>",
@@ -1296,6 +1310,7 @@ static Msg *handle_dlr(SMPP *smpp, Octstr *destination_addr, Octstr *short_messa
                 octstr_get_cstr(destination_addr), dlrstat);
     }
     octstr_destroy(tmp);
+    octstr_destroy(err);
                 
     return dlrmsg;
 }
@@ -1337,7 +1352,7 @@ static void handle_pdu(SMPP *smpp, Connection *conn, SMPP_PDU *pdu,
            mutex_lock(smpp->conn->flow_mutex);
            if (smpp->conn->is_stopped) {
                  mutex_unlock(smpp->conn->flow_mutex);
-                 resp->u.data_sm.command_status = SMPP_ESME_RX_T_APPN;
+                 resp->u.data_sm_resp.command_status = SMPP_ESME_RX_T_APPN;
                  break;
            }
            mutex_unlock(smpp->conn->flow_mutex);
@@ -1351,10 +1366,16 @@ static void handle_pdu(SMPP *smpp, Connection *conn, SMPP_PDU *pdu,
                       octstr_get_cstr(smpp->conn->id));
                 dlrmsg = handle_dlr(smpp, pdu->u.data_sm.source_addr, NULL, pdu->u.data_sm.message_payload,
                                     pdu->u.data_sm.receipted_message_id, pdu->u.data_sm.message_state);
-                if (dlrmsg != NULL)
+                if (dlrmsg != NULL) {
+                    /* passing DLR to upper layer */
                     reason = bb_smscconn_receive(smpp->conn, dlrmsg);
-                else
+                } else {
+                    /* no DLR will be passed, but we write an access-log entry */
                     reason = SMSCCONN_SUCCESS;
+                    msg = data_sm_to_msg(smpp, pdu, &reason);
+                    bb_alog_sms(smpp->conn, msg, "FAILED DLR SMS");
+                    msg_destroy(msg);
+                }
                 resp->u.data_sm_resp.command_status = smscconn_failure_reason_to_smpp_status(reason);
            } else { /* MO message */
                 msg = data_sm_to_msg(smpp, pdu, &reason);
@@ -1383,7 +1404,7 @@ static void handle_pdu(SMPP *smpp, Connection *conn, SMPP_PDU *pdu,
                  mutex_unlock(smpp->conn->flow_mutex);
                  resp = smpp_pdu_create(deliver_sm_resp,
                                pdu->u.deliver_sm.sequence_number);
-                 resp->u.deliver_sm.command_status = SMPP_ESME_RX_T_APPN;
+                 resp->u.deliver_sm_resp.command_status = SMPP_ESME_RX_T_APPN;
 	             break;
            }
            mutex_unlock(smpp->conn->flow_mutex);
@@ -1617,11 +1638,11 @@ static void handle_pdu(SMPP *smpp, Connection *conn, SMPP_PDU *pdu,
         default:
             error(0, "SMPP[%s]: Unknown PDU type 0x%08lx, ignored.",
                   octstr_get_cstr(smpp->conn->id), pdu->type);
+            
             /*
-                send gnack , see smpp3.4 spec., section 3.3
-                because we doesn't know what kind of pdu received, we assume generick_nack_resp
-                (header always the same)
-            */
+             * We received an unknown PDU type, therefore we will respond
+             * with a generic_nack PDU, see SMPP v3.4 spec, section 3.3.
+             */
             resp = smpp_pdu_create(generic_nack, pdu->u.generic_nack.sequence_number);
             resp->u.generic_nack.command_status = SMPP_ESME_RINVCMDID;
             break;
@@ -1862,7 +1883,7 @@ static void io_thread(void *arg)
 
             long reason = (smpp->quitting?SMSCCONN_FAILED_SHUTDOWN:SMSCCONN_FAILED_TEMPORARILY);
 
-            while((msg = gwlist_extract_first(smpp->msgs_to_send)) != NULL)
+            while((msg = gw_prioqueue_remove(smpp->msgs_to_send)) != NULL)
                 bb_smscconn_send_failed(smpp->conn, msg, reason, NULL);
 
             noresp = dict_keys(smpp->sent_msgs);
@@ -1902,7 +1923,7 @@ static long queued_cb(SMSCConn *conn)
 
     smpp = conn->data;
     conn->load = (smpp ? (conn->status != SMSCCONN_DEAD ?
-                  gwlist_len(smpp->msgs_to_send) : 0) : 0);
+                  gw_prioqueue_len(smpp->msgs_to_send) : 0) : 0);
     return conn->load;
 }
 
@@ -1912,7 +1933,7 @@ static int send_msg_cb(SMSCConn *conn, Msg *msg)
     SMPP *smpp;
 
     smpp = conn->data;
-    gwlist_produce(smpp->msgs_to_send, msg_duplicate(msg));
+    gw_prioqueue_produce(smpp->msgs_to_send, msg_duplicate(msg));
     gwthread_wakeup(smpp->transmitter);
     return 0;
 }

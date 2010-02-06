@@ -1,7 +1,7 @@
 /* ==================================================================== 
  * The Kannel Software License, Version 1.0 
  * 
- * Copyright (c) 2001-2005 Kannel Group  
+ * Copyright (c) 2001-2009 Kannel Group  
  * Copyright (c) 1998-2001 WapIT Ltd.   
  * All rights reserved. 
  * 
@@ -271,6 +271,14 @@ void gwlist_produce(List *list, void *item);
  * producers, sleep until there is something to return.
  */
 void *gwlist_consume(List *list);
+
+
+/*
+ * Remove an item from the list, or return NULL if the list was empty
+ * and there were no producers. If the list is empty but there are
+ * producers, sleep until there is something to return or timeout occur.
+ */
+void *gwlist_timed_consume(List *list, long sec);
 
 
 /*

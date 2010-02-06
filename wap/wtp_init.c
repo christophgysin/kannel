@@ -1,7 +1,7 @@
 /* ==================================================================== 
  * The Kannel Software License, Version 1.0 
  * 
- * Copyright (c) 2001-2005 Kannel Group  
+ * Copyright (c) 2001-2009 Kannel Group  
  * Copyright (c) 1998-2001 WapIT Ltd.   
  * All rights reserved. 
  * 
@@ -284,11 +284,11 @@ static void init_machine_destroy(void *p)
 static unsigned char *name_init_state(int s)
 {
        switch (s){
-       #define INIT_STATE_NAME(state) case state: return #state;
+       #define INIT_STATE_NAME(state) case state: return (unsigned char *) #state;
        #define ROW(state, event, condition, action, new_state)
        #include "wtp_init_states.def"
        default:
-           return "unknown state";
+           return (unsigned char *)"unknown state";
        }
 }
 

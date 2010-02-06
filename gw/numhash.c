@@ -1,7 +1,7 @@
 /* ==================================================================== 
  * The Kannel Software License, Version 1.0 
  * 
- * Copyright (c) 2001-2005 Kannel Group  
+ * Copyright (c) 2001-2009 Kannel Group  
  * Copyright (c) 1998-2001 WapIT Ltd.   
  * All rights reserved. 
  * 
@@ -311,7 +311,7 @@ Numhash *numhash_create(char *seek_url)
     Octstr	*url, *final_url, *reply_body;
     Octstr	*type, *charset;
     
-    unsigned char       	*data, *ptr, numbuf[100];
+    char    *data, *ptr, numbuf[100];
     int		status;
     Numhash	*table;
 

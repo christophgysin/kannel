@@ -1,7 +1,7 @@
 /* ==================================================================== 
  * The Kannel Software License, Version 1.0 
  * 
- * Copyright (c) 2001-2005 Kannel Group  
+ * Copyright (c) 2001-2009 Kannel Group  
  * Copyright (c) 1998-2001 WapIT Ltd.   
  * All rights reserved. 
  * 
@@ -63,17 +63,20 @@
  * substitute strings arround regular expressions.
  *
  * See regex(3) man page for more details on POSIX regular expressions.
+ * 
+ * PCRE allows wrapper functions for POSIX regex via an own API. So we
+ * use PCRE in favor, before falling back to POSIX regex.
  *
- * Stipe Tolj <stolj@wapme.de>
+ * Stipe Tolj <stolj@kannel.org>
  */
 
 #ifndef REGEX_H
 #define REGEX_H
 
-#ifdef HAVE_REGEX
-# include <regex.h>
-#elif HAVE_PCRE
+#ifdef HAVE_PCRE
 # include <pcreposix.h>
+#elif HAVE_REGEX
+# include <regex.h>
 #endif
 
 #if defined(HAVE_REGEX) || defined(HAVE_PCRE)

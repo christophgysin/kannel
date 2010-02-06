@@ -1,7 +1,7 @@
 /* ==================================================================== 
  * The Kannel Software License, Version 1.0 
  * 
- * Copyright (c) 2001-2005 Kannel Group  
+ * Copyright (c) 2001-2009 Kannel Group  
  * Copyright (c) 1998-2001 WapIT Ltd.   
  * All rights reserved. 
  * 
@@ -77,6 +77,7 @@
 #include "bearerbox.h"
 #include "shared.h"
 #include "dlr.h"
+#include "load.h"
 
 /* global variables; included to other modules as needed */
 
@@ -93,7 +94,11 @@ Counter *outgoing_wdp_counter;
 
 /* incoming/outgoing sms queue control */
 long max_incoming_sms_qlength;
+long max_outgoing_sms_qlength;
 
+
+Load *outgoing_sms_load;
+Load *incoming_sms_load;
 
 
 /* this is not a list of items; instead it is used as
@@ -144,9 +149,9 @@ static void set_shutdown_status(void)
     bb_status = BB_SHUTDOWN;
     
     if (old == BB_SUSPENDED)
-	gwlist_remove_producer(suspended);
+        gwlist_remove_producer(suspended);
     if (old == BB_SUSPENDED || old == BB_ISOLATED)
-	gwlist_remove_producer(isolated);
+        gwlist_remove_producer(isolated);
 }
 
 
@@ -181,13 +186,13 @@ static void signal_handler(int signum)
         case SIGHUP:
             bb_todo |= BB_LOGREOPEN;
             break;
-        
-        /* 
+
+        /*
          * It would be more proper to use SIGUSR1 for this, but on some
-         * platforms that's reserved by the pthread support. 
+         * platforms that's reserved by the pthread support.
          */
         case SIGQUIT:
-           bb_todo |= BB_CHECKLEAKS;  
+           bb_todo |= BB_CHECKLEAKS;
            break;
     }
 }
@@ -207,8 +212,6 @@ static void setup_signal_handlers(void)
 }
 
 
-
-
 /*--------------------------------------------------------
  * functions to start/init sub-parts of the bearerbox
  *
@@ -216,12 +219,12 @@ static void setup_signal_handlers(void)
  * as there is only one core bearerbox thread
  */
 
-
-
 static int start_smsc(Cfg *cfg)
 {
     static int started = 0;
-    if (started) return 0;
+
+    if (started) 
+        return 0;
 
     smsbox_start(cfg);
 
@@ -238,20 +241,20 @@ static void wdp_router(void *arg)
 
     gwlist_add_producer(flow_threads);
     
-    while(bb_status != BB_DEAD) {
+    while (bb_status != BB_DEAD) {
 
-	if ((msg = gwlist_consume(outgoing_wdp)) == NULL)
-	    break;
+        if ((msg = gwlist_consume(outgoing_wdp)) == NULL)
+            break;
 
-	gw_assert(msg_type(msg) == wdp_datagram);
+        gw_assert(msg_type(msg) == wdp_datagram);
 	
-	/*
-	if (msg->list == sms)
-	    smsc_addwdp(msg);
-	else
-	*/
+        /*
+        if (msg->list == sms)
+            smsc_addwdp(msg);
+        else
+        */
 
-	udp_addwdp(msg);
+        udp_addwdp(msg);
     }
     udp_die();
     /* smsc_endwdp(); */
@@ -259,17 +262,19 @@ static void wdp_router(void *arg)
     gwlist_remove_producer(flow_threads);
 }
 
+
 static int start_wap(Cfg *cfg)
 {
     static int started = 0;
-    if (started) return 0;
 
+    if (started) 
+        return 0;
     
     wapbox_start(cfg);
 
     debug("bb", 0, "starting WDP router");
     if (gwthread_create(wdp_router, NULL) == -1)
-	panic(0, "Failed to start a new thread for WDP routing");
+        panic(0, "Failed to start a new thread for WDP routing");
 
     started = 1;
     return 0;
@@ -279,7 +284,9 @@ static int start_wap(Cfg *cfg)
 static int start_udp(Cfg *cfg)
 {
     static int started = 0;
-    if (started) return 0;
+
+    if (started) 
+        return 0;
 
     udp_start(cfg);
 
@@ -309,31 +316,36 @@ static int check_config(Cfg *cfg)
 #ifndef NO_SMS    
     grp = cfg_get_single_group(cfg, octstr_imm("smsbox"));
     if (smsp != -1 && grp == NULL) {
-	error(0, "No 'smsbox' group in configuration, but smsbox-port set");
-	return -1;
+        error(0, "No 'smsbox' group in configuration, but smsbox-port set");
+        return -1;
     }
+#else
+    warning(0, "Kannel was compiled without SMS support");
 #endif
     
 #ifndef NO_WAP	
     grp = cfg_get_single_group(cfg, octstr_imm("wapbox"));
     if (wapp != -1 && grp == NULL) {
-	error(0, "No 'wapbox' group in configuration, but wapbox-port set");
-	return -1;
+        error(0, "No 'wapbox' group in configuration, but wapbox-port set");
+        return -1;
     }
+#else
+    warning(0, "Kannel was compiled without WAP support");
 #endif
     
     return 0;
 }
 
+
 /*
  * check our own variables
  */
-
-static int check_args(int i, int argc, char **argv) {
+static int check_args(int i, int argc, char **argv) 
+{
     if (strcmp(argv[i], "-S")==0 || strcmp(argv[i], "--suspended")==0)
-	bb_status = BB_SUSPENDED;
+        bb_status = BB_SUSPENDED;
     else if (strcmp(argv[i], "-I")==0 || strcmp(argv[i], "--isolated")==0)
-	bb_status = BB_ISOLATED;
+        bb_status = BB_ISOLATED;
     else
         return -1;
 
@@ -360,10 +372,10 @@ static Cfg *init_bearerbox(Cfg *cfg)
 
     log = cfg_get(grp, octstr_imm("log-file"));
     if (log != NULL) {
-	if (cfg_get_integer(&loglevel, grp, octstr_imm("log-level")) == -1)
-	    loglevel = 0;
-	log_open(octstr_get_cstr(log), loglevel, GW_NON_EXCL);
-	octstr_destroy(log);
+        if (cfg_get_integer(&loglevel, grp, octstr_imm("log-level")) == -1)
+            loglevel = 0;
+        log_open(octstr_get_cstr(log), loglevel, GW_NON_EXCL);
+        octstr_destroy(log);
     }
 
     if (check_config(cfg) == -1)
@@ -397,14 +409,20 @@ static Cfg *init_bearerbox(Cfg *cfg)
     log = cfg_get(grp, octstr_imm("store-file"));
     /* initialize the store file */
     if (log != NULL) {
-        if (store_init(log, store_dump_freq) == -1)
-            panic(0, "Could not start with store init failed.");
-        octstr_destroy(log);
+        warning(0, "'store-file' option deprecated, please use 'store-location' and 'store-type' instead.");
+        val = octstr_create("file");
+    } else {
+        log = cfg_get(grp, octstr_imm("store-location"));
+        val = cfg_get(grp, octstr_imm("store-type"));
     }
+    if (store_init(val, log, store_dump_freq, msg_pack, msg_unpack_wrapper) == -1)
+        panic(0, "Could not start with store init failed.");
+    octstr_destroy(val);
+    octstr_destroy(log);
 
     conn_config_ssl (grp);
 
-    /* 
+    /*
      * Make sure we have "ssl-server-cert-file" and "ssl-server-key-file" specified
      * in the core group since we need it to run SSL-enabled internal box 
      * connections configured via "smsbox-port-ssl = yes" and "wapbox-port-ssl = yes".
@@ -426,9 +444,9 @@ static Cfg *init_bearerbox(Cfg *cfg)
     octstr_destroy(ssl_server_cert_file);
     octstr_destroy(ssl_server_key_file);
 #endif /* HAVE_LIBSSL */
-	
+
     /* if all seems to be OK by the first glimpse, real start-up */
-    
+
     outgoing_sms = gwlist_create();
     incoming_sms = gwlist_create();
     outgoing_wdp = gwlist_create();
@@ -438,11 +456,21 @@ static Cfg *init_bearerbox(Cfg *cfg)
     incoming_sms_counter = counter_create();
     outgoing_wdp_counter = counter_create();
     incoming_wdp_counter = counter_create();
-    
+
     status_mutex = mutex_create();
 
-    setup_signal_handlers();
+    outgoing_sms_load = load_create();
+    /* add 60,300,-1 entries */
+    load_add_interval(outgoing_sms_load, 60);
+    load_add_interval(outgoing_sms_load, 300);
+    load_add_interval(outgoing_sms_load, -1);
+    incoming_sms_load = load_create();
+    /* add 60,300,-1 entries */
+    load_add_interval(incoming_sms_load, 60);
+    load_add_interval(incoming_sms_load, 300);
+    load_add_interval(incoming_sms_load, -1);
 
+    setup_signal_handlers();
     
     /* http-admin is REQUIRED */
     httpadmin_start(cfg);
@@ -459,16 +487,20 @@ static Cfg *init_bearerbox(Cfg *cfg)
         cfg_get_integer(&max_incoming_sms_qlength, grp,
                                   octstr_imm("sms-incoming-queue-limit")) == -1)
         max_incoming_sms_qlength = -1;
+        
+    if (cfg_get_integer(&max_outgoing_sms_qlength, grp,
+                                  octstr_imm("sms-outgoing-queue-limit")) == -1)
+        max_outgoing_sms_qlength = -1;
 
 #ifndef NO_SMS    
     {
-	List *list;
+        List *list;
 	
-	list = cfg_get_multi_group(cfg, octstr_imm("smsc"));
-	if (list != NULL) {
-	    start_smsc(cfg);
-	    gwlist_destroy(list, NULL);
-	}
+        list = cfg_get_multi_group(cfg, octstr_imm("smsc"));
+        if (list != NULL) {
+            start_smsc(cfg);
+            gwlist_destroy(list, NULL);
+        }
     }
 #endif
     
@@ -476,11 +508,11 @@ static Cfg *init_bearerbox(Cfg *cfg)
     grp = cfg_get_single_group(cfg, octstr_imm("core"));
     val = cfg_get(grp, octstr_imm("wdp-interface-name"));
     if (val != NULL && octstr_len(val) > 0)
-	start_udp(cfg);
+        start_udp(cfg);
     octstr_destroy(val);
 
     if (cfg_get_single_group(cfg, octstr_imm("wapbox")) != NULL)
-	start_wap(cfg);
+        start_wap(cfg);
 #endif
     
     return cfg;
@@ -492,20 +524,19 @@ static void empty_msg_lists(void)
     Msg *msg;
 
 #ifndef NO_WAP
-
     if (gwlist_len(incoming_wdp) > 0 || gwlist_len(outgoing_wdp) > 0)
-	warning(0, "Remaining WDP: %ld incoming, %ld outgoing",
-	      gwlist_len(incoming_wdp), gwlist_len(outgoing_wdp));
+        warning(0, "Remaining WDP: %ld incoming, %ld outgoing",
+                gwlist_len(incoming_wdp), gwlist_len(outgoing_wdp));
 
     info(0, "Total WDP messages: received %ld, sent %ld",
-	 counter_value(incoming_wdp_counter),
-	 counter_value(outgoing_wdp_counter));
+         counter_value(incoming_wdp_counter),
+         counter_value(outgoing_wdp_counter));
 #endif
     
-    while((msg = gwlist_extract_first(incoming_wdp))!=NULL)
-	msg_destroy(msg);
-    while((msg = gwlist_extract_first(outgoing_wdp))!=NULL)
-	msg_destroy(msg);
+    while ((msg = gwlist_extract_first(incoming_wdp)) != NULL)
+        msg_destroy(msg);
+    while ((msg = gwlist_extract_first(outgoing_wdp)) != NULL)
+        msg_destroy(msg);
 
     gwlist_destroy(incoming_wdp, NULL);
     gwlist_destroy(outgoing_wdp, NULL);
@@ -513,19 +544,15 @@ static void empty_msg_lists(void)
     counter_destroy(incoming_wdp_counter);
     counter_destroy(outgoing_wdp_counter);
     
-    
 #ifndef NO_SMS
-
-    /* XXX we should record these so that they are not forever lost...
-     */
+    /* XXX we should record these so that they are not forever lost... */
     if (gwlist_len(incoming_sms) > 0 || gwlist_len(outgoing_sms) > 0)
-	debug("bb", 0, "Remaining SMS: %ld incoming, %ld outgoing",
-	      gwlist_len(incoming_sms), gwlist_len(outgoing_sms));
+        debug("bb", 0, "Remaining SMS: %ld incoming, %ld outgoing",
+              gwlist_len(incoming_sms), gwlist_len(outgoing_sms));
 
     info(0, "Total SMS messages: received %ld, sent %ld",
-	 counter_value(incoming_sms_counter),
-	 counter_value(outgoing_sms_counter));
-
+         counter_value(incoming_sms_counter),
+         counter_value(outgoing_sms_counter));
 #endif
 
     gwlist_destroy(incoming_sms, msg_destroy_item);
@@ -533,6 +560,9 @@ static void empty_msg_lists(void)
     
     counter_destroy(incoming_sms_counter);
     counter_destroy(outgoing_sms_counter);
+
+    load_destroy(incoming_sms_load);
+    load_destroy(outgoing_sms_load);
 }
 
 
@@ -597,7 +627,6 @@ int main(int argc, char **argv)
     info(0, "----------------------------------------");
     info(0, GW_NAME " bearerbox II version %s starting", GW_VERSION);
 
-
     gwthread_sleep(5.0); /* give time to threads to register themselves */
 
     if (store_load(dispatch_into_queue) == -1)
@@ -654,7 +683,7 @@ int main(int argc, char **argv)
 
     /* wait until flow threads exit */
     while (gwlist_consume(flow_threads) != NULL)
-    ;
+        ;
 
     info(0, "All flow threads have died, killing core");
     bb_status = BB_DEAD;
@@ -693,8 +722,8 @@ int bb_shutdown(void)
     mutex_lock(status_mutex);
     
     if (called) {
-	mutex_unlock(status_mutex);
-	return -1;
+        mutex_unlock(status_mutex);
+        return -1;
     }
     debug("bb", 0, "Shutting down " GW_NAME "...");
 
@@ -714,16 +743,17 @@ int bb_shutdown(void)
     return 0;
 }
 
+
 int bb_isolate(void)
 {
     mutex_lock(status_mutex);
     if (bb_status != BB_RUNNING && bb_status != BB_SUSPENDED) {
-	mutex_unlock(status_mutex);
-	return -1;
+        mutex_unlock(status_mutex);
+        return -1;
     }
     if (bb_status == BB_RUNNING) {
-	smsc2_suspend();
-	gwlist_add_producer(isolated);
+        smsc2_suspend();
+        gwlist_add_producer(isolated);
     } else
 	gwlist_remove_producer(suspended);
 
@@ -732,16 +762,17 @@ int bb_isolate(void)
     return 0;
 }
 
+
 int bb_suspend(void)
 {
     mutex_lock(status_mutex);
     if (bb_status != BB_RUNNING && bb_status != BB_ISOLATED) {
-	mutex_unlock(status_mutex);
-	return -1;
+        mutex_unlock(status_mutex);
+        return -1;
     }
     if (bb_status != BB_ISOLATED) {
-	smsc2_suspend();
-	gwlist_add_producer(isolated);
+        smsc2_suspend();
+        gwlist_add_producer(isolated);
     }
     bb_status = BB_SUSPENDED;
     gwlist_add_producer(suspended);
@@ -749,15 +780,16 @@ int bb_suspend(void)
     return 0;
 }
 
+
 int bb_resume(void)
 {
     mutex_lock(status_mutex);
     if (bb_status != BB_SUSPENDED && bb_status != BB_ISOLATED) {
-	mutex_unlock(status_mutex);
-	return -1;
+        mutex_unlock(status_mutex);
+        return -1;
     }
     if (bb_status == BB_SUSPENDED)
-	gwlist_remove_producer(suspended);
+        gwlist_remove_producer(suspended);
 
     smsc2_resume();
     bb_status = BB_RUNNING;
@@ -766,20 +798,23 @@ int bb_resume(void)
     return 0;
 }
 
+
 int bb_flush_dlr(void)
 {
     /* beware that mutex locking is done in dlr_foobar() routines */
     if (bb_status != BB_SUSPENDED) {
-	return -1;
+        return -1;
     }
     dlr_flush();
     return 0;
 }
 
+
 int bb_stop_smsc(Octstr *id)
 {
     return smsc2_stop_smsc(id);
 }
+
 
 int bb_restart_smsc(Octstr *id)
 {
@@ -793,98 +828,92 @@ int bb_restart(void)
 }
 
 
-
 #define append_status(r, s, f, x) { s = f(x); octstr_append(r, s); \
-                                 octstr_destroy(s); }
-
+                                    octstr_destroy(s); }
 
 Octstr *bb_print_status(int status_type)
 {
     char *s, *lb;
     char *frmt, *footer;
-    char buf[1024];
     Octstr *ret, *str, *version;
     time_t t;
 
-    if ((lb = bb_status_linebreak(status_type))==NULL)
-	return octstr_create("Un-supported format");
+    if ((lb = bb_status_linebreak(status_type)) == NULL)
+        return octstr_create("Un-supported format");
 
     t = time(NULL) - start_time;
     
     if (bb_status == BB_RUNNING)
-	s = "running";
+        s = "running";
     else if (bb_status == BB_ISOLATED)
-	s = "isolated";
+        s = "isolated";
     else if (bb_status == BB_SUSPENDED)
-	s = "suspended";
+        s = "suspended";
     else if (bb_status == BB_FULL)
         s = "filled";
     else
-	s = "going down";
+        s = "going down";
 
     version = version_report_string("bearerbox");
 
     if (status_type == BBSTATUS_HTML) {
-	frmt = "%s</p>\n\n"
-	    " <p>Status: %s, uptime %ldd %ldh %ldm %lds</p>\n\n"
-	    " <p>WDP: received %ld (%ld queued), sent %ld "
-	    "(%ld queued)</p>\n\n"
-	    " <p>SMS: received %ld (%ld queued), sent %ld "
-	    "(%ld queued), store size %ld</p>\n"
-        " <p>SMS: inbound %.2f msg/sec, outbound %.2f msg/sec</p>\n\n"
-        " <p>DLR: %ld queued, using %s storage</p>\n\n";
-	footer = "<p>";
+        frmt = "%s</p>\n\n"
+               " <p>Status: %s, uptime %ldd %ldh %ldm %lds</p>\n\n"
+               " <p>WDP: received %ld (%ld queued), sent %ld "
+               "(%ld queued)</p>\n\n"
+               " <p>SMS: received %ld (%ld queued), sent %ld "
+               "(%ld queued), store size %ld</p>\n"
+               " <p>SMS: inbound (%.2f,%.2f,%.2f) msg/sec, outbound (%.2f,%.2f,%.2f) msg/sec</p>\n\n"
+               " <p>DLR: %ld queued, using %s storage</p>\n\n";
+        footer = "<p>";
     } else if (status_type == BBSTATUS_WML) {
-	frmt = "%s</p>\n\n"
-	    "   <p>Status: %s, uptime %ldd %ldh %ldm %lds</p>\n\n"
-	    "   <p>WDP: received %ld (%ld queued)<br/>\n"
-	    "      WDP: sent %ld (%ld queued)</p>\n\n"
-	    "   <p>SMS: received %ld (%ld queued)<br/>\n"
-	    "      SMS: sent %ld (%ld queued)<br/>\n"
-        "      SMS: store size %ld<br/>\n"
-        "      SMS: inbound %.2f msg/sec<br/>\n"
-        "      SMS: outbound %.2f msg/sec</p>\n\n"
-        "   <p>DLR: %ld queued<br/>\n"
-        "      DLR: using %s storage</p>\n\n";
-	footer = "<p>";
+        frmt = "%s</p>\n\n"
+               "   <p>Status: %s, uptime %ldd %ldh %ldm %lds</p>\n\n"
+               "   <p>WDP: received %ld (%ld queued)<br/>\n"
+               "      WDP: sent %ld (%ld queued)</p>\n\n"
+               "   <p>SMS: received %ld (%ld queued)<br/>\n"
+               "      SMS: sent %ld (%ld queued)<br/>\n"
+               "      SMS: store size %ld<br/>\n"
+               "      SMS: inbound (%.2f,%.2f,%.2f) msg/sec<br/>\n"
+               "      SMS: outbound (%.2f,%.2f,%.2f) msg/sec</p>\n\n"
+               "   <p>DLR: %ld queued<br/>\n"
+               "      DLR: using %s storage</p>\n\n";
+        footer = "<p>";
     } else if (status_type == BBSTATUS_XML) {
-	frmt = "<version>%s</version>\n"
-	    "<status>%s, uptime %ldd %ldh %ldm %lds</status>\n"
-	    "\t<wdp>\n\t\t<received><total>%ld</total><queued>%ld</queued></received>\n\t\t<sent><total>%ld"
-	    "</total><queued>%ld</queued></sent>\n\t</wdp>\n"
-	    "\t<sms>\n\t\t<received><total>%ld</total><queued>%ld</queued></received>\n\t\t<sent><total>%ld"
-	    "</total><queued>%ld</queued></sent>\n\t\t<storesize>%ld</storesize>\n\t\t"
-        "<inbound>%.2f</inbound>\n\t\t<outbound>%.2f</outbound>\n\t</sms>\n"
-	    "\t<dlr>\n\t\t<queued>%ld</queued>\n\t\t<storage>%s</storage>\n\t</dlr>\n";
-	footer = "";
+        frmt = "<version>%s</version>\n"
+               "<status>%s, uptime %ldd %ldh %ldm %lds</status>\n"
+               "\t<wdp>\n\t\t<received><total>%ld</total><queued>%ld</queued>"
+               "</received>\n\t\t<sent><total>%ld</total><queued>%ld</queued>"
+               "</sent>\n\t</wdp>\n"
+               "\t<sms>\n\t\t<received><total>%ld</total><queued>%ld</queued>"
+               "</received>\n\t\t<sent><total>%ld</total><queued>%ld</queued>"
+               "</sent>\n\t\t<storesize>%ld</storesize>\n\t\t"
+               "<inbound>%.2f,%.2f,%.2f</inbound>\n\t\t<outbound>%.2f,%.2f,%.2f</outbound>\n\t</sms>\n"
+               "\t<dlr>\n\t\t<queued>%ld</queued>\n\t\t<storage>%s</storage>\n\t</dlr>\n";
+        footer = "";
     } else {
-	frmt = "%s\n\nStatus: %s, uptime %ldd %ldh %ldm %lds\n\n"
-	    "WDP: received %ld (%ld queued), sent %ld (%ld queued)\n\n"
-	    "SMS: received %ld (%ld queued), sent %ld (%ld queued), store size %ld\n"
-        "SMS: inbound %.2f msg/sec, outbound %.2f msg/sec\n\n"
-        "DLR: %ld queued, using %s storage\n\n";
-	footer = "";
+        frmt = "%s\n\nStatus: %s, uptime %ldd %ldh %ldm %lds\n\n"
+               "WDP: received %ld (%ld queued), sent %ld (%ld queued)\n\n"
+               "SMS: received %ld (%ld queued), sent %ld (%ld queued), store size %ld\n"
+               "SMS: inbound (%.2f,%.2f,%.2f) msg/sec, outbound (%.2f,%.2f,%.2f) msg/sec\n\n"
+               "DLR: %ld queued, using %s storage\n\n";
+        footer = "";
     }
     
-    sprintf(buf, frmt,
-	    octstr_get_cstr(version),
-	    s, t/3600/24, t/3600%24, t/60%60, t%60,
-	    counter_value(incoming_wdp_counter),
-	    gwlist_len(incoming_wdp) + boxc_incoming_wdp_queue(),
-	    counter_value(outgoing_wdp_counter),
-	    gwlist_len(outgoing_wdp) + udp_outgoing_queue(),
-	    counter_value(incoming_sms_counter),
-	    gwlist_len(incoming_sms),
-	    counter_value(outgoing_sms_counter),
-	    gwlist_len(outgoing_sms),
-	    store_messages(),
-        (float)counter_value(incoming_sms_counter)/t,
-        (float)counter_value(outgoing_sms_counter)/t,
-        dlr_messages(),
-        dlr_type());
+    ret = octstr_format(frmt,
+        octstr_get_cstr(version),
+        s, t/3600/24, t/3600%24, t/60%60, t%60,
+        counter_value(incoming_wdp_counter),
+        gwlist_len(incoming_wdp) + boxc_incoming_wdp_queue(),
+        counter_value(outgoing_wdp_counter), gwlist_len(outgoing_wdp) + udp_outgoing_queue(),
+        counter_value(incoming_sms_counter), gwlist_len(incoming_sms),
+        counter_value(outgoing_sms_counter), gwlist_len(outgoing_sms),
+        store_messages(),
+        load_get(incoming_sms_load,0), load_get(incoming_sms_load,1), load_get(incoming_sms_load,2),
+        load_get(outgoing_sms_load,0), load_get(outgoing_sms_load,1), load_get(outgoing_sms_load,2),
+        dlr_messages(), dlr_type());
 
     octstr_destroy(version);
-    ret = octstr_create(buf);
     
     append_status(ret, str, boxc_status, status_type);
     append_status(ret, str, smsc2_status, status_type);
@@ -896,16 +925,16 @@ Octstr *bb_print_status(int status_type)
 
 char *bb_status_linebreak(int status_type)
 {
-    switch(status_type) {
-    case BBSTATUS_HTML:
-	return "<br>\n";
-    case BBSTATUS_WML:
-	return "<br/>\n";
-    case BBSTATUS_TEXT:
-	return "\n";
-    case BBSTATUS_XML:
-	return "\n";
-    default:
-	return NULL;
+    switch (status_type) {
+        case BBSTATUS_HTML:
+            return "<br>\n";
+        case BBSTATUS_WML:
+            return "<br/>\n";
+        case BBSTATUS_TEXT:
+            return "\n";
+        case BBSTATUS_XML:
+            return "\n";
+        default:
+            return NULL;
     }
 }

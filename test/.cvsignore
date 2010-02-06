@@ -49,4 +49,7 @@ test_prioqueue
 test_hmac
 test_conn
 test_store_dump
+decode_emimsg
+test_charset
 *.exe
+*.i

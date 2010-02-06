@@ -1,7 +1,7 @@
 /* ==================================================================== 
  * The Kannel Software License, Version 1.0 
  * 
- * Copyright (c) 2001-2005 Kannel Group  
+ * Copyright (c) 2001-2009 Kannel Group  
  * Copyright (c) 1998-2001 WapIT Ltd.   
  * All rights reserved. 
  * 
@@ -59,11 +59,12 @@
  *
  * Uoti Urpala 2001
  * Alexander Malysh and Stipe Tolj 2002-2003
+ * Vincent Chavanis 2005-2006
  *
  * References:
  *
- *   [1] Short Message Sergice Centre 4.0 EMI - UCP Interface Specification
- *       document version 4.2, May 2001, CMG Wireless Data Solutions.
+ *   [1] Short Message Service Centre 4.6 EMI - UCP Interface Specification
+ *       document version 4.6, April 2003, CMG Wireless Data Solutions.
  */
 
 /* Doesn't warn about unrecognized configuration variables */
@@ -273,8 +274,7 @@ static Connection *open_send_connection(SMSCConn *conn)
     int connect_error = 0;
     int wait_ack = 0;
 
-    do_alt_host = octstr_len(privdata->alt_host) != 0 || 
-	    privdata->alt_port != 0;
+    do_alt_host = octstr_len(privdata->alt_host) != 0 || privdata->alt_port != 0;
 
     alt_host = 0;
 
@@ -299,17 +299,27 @@ static Connection *open_send_connection(SMSCConn *conn)
 	if (alt_host != 1) {
 	    info(0, "EMI2[%s]: connecting to Primary SMSC",
 			    octstr_get_cstr(privdata->name));
+        mutex_lock(conn->flow_mutex);
+        octstr_destroy(conn->name);
+        conn->name = octstr_format("EMI2:%S:%d:%S", privdata->host, privdata->port, privdata->username ? privdata->username : octstr_imm("null"));
+        mutex_unlock(conn->flow_mutex);
 	    server = conn_open_tcp_with_port(privdata->host, privdata->port,
 					     privdata->our_port,
 					     conn->our_host);
 	    if(do_alt_host)
-		alt_host=1;
+            alt_host=1;
 	    else
-		alt_host=0;
+            alt_host=0;
 	} else {
 	    info(0, "EMI2[%s]: connecting to Alternate SMSC",
 			    octstr_get_cstr(privdata->name));
 	    /* use alt_host or/and alt_port if defined */
+        mutex_lock(conn->flow_mutex);
+        octstr_destroy(conn->name);
+        conn->name = octstr_format("EMI2:%S:%d:%S", octstr_len(privdata->alt_host) ? privdata->alt_host : privdata->host,
+                                  privdata->alt_port ? privdata->alt_port : privdata->port,
+								  privdata->username ? privdata->username : octstr_imm("null"));
+        mutex_unlock(conn->flow_mutex);
 	    server = conn_open_tcp_with_port(
 		(octstr_len(privdata->alt_host) ? privdata->alt_host : privdata->host),
 		(privdata->alt_port ? privdata->alt_port : privdata->port),
@@ -414,7 +424,7 @@ static struct emimsg *msg_to_emimsg(Msg *msg, int trn, PrivData *privdata)
     	/* either alphanum or international */
     	if (!octstr_check_range(str, 1, 256, gw_isdigit)) {
 	    /* alphanumeric sender address with + in front*/
-	    charset_latin1_to_gsm(str);
+	    charset_utf8_to_gsm(str);
 	    octstr_truncate(str, 11); /* max length of alphanumeric OaDC */
 	    emimsg->fields[E50_OTOA] = octstr_create("5039");
 	    pack_7bit(str);
@@ -429,7 +439,7 @@ static struct emimsg *msg_to_emimsg(Msg *msg, int trn, PrivData *privdata)
     else {
 	if (!octstr_check_range(str, 0, 256, gw_isdigit)) {
 	    /* alphanumeric sender address */
-            charset_latin1_to_gsm(str);
+            charset_utf8_to_gsm(str);
 	    octstr_truncate(str, 11); /* max length of alphanumeric OaDC */
 	    emimsg->fields[E50_OTOA] = octstr_create("5039");
 	    pack_7bit(str);
@@ -509,7 +519,7 @@ static struct emimsg *msg_to_emimsg(Msg *msg, int trn, PrivData *privdata)
     else {
 	emimsg->fields[E50_MT] = octstr_create("3");
 	str = octstr_duplicate(msg->sms.msgdata);
-	charset_latin1_to_gsm(str);
+	charset_utf8_to_gsm(str);
 
     /*
      * Check if we have to apply some after GSM transcoding kludges
@@ -607,7 +617,7 @@ static int handle_operation(SMSCConn *conn, Connection *server,
         if (privdata->alt_charset == EMI_NRC_ISO_21)
             charset_nrc_iso_21_german_to_gsm(msg->sms.msgdata);
 
-	    charset_gsm_to_latin1(msg->sms.msgdata);
+	    charset_gsm_to_utf8(msg->sms.msgdata);
 	}
 	else {
 	    error(0, "EMI2[%s]: MT == %s isn't supported for operation type 01",
@@ -703,8 +713,8 @@ static int handle_operation(SMSCConn *conn, Connection *server,
                 break;
 
             /* 
-             * XSer 03-0b are for TDMA information exchange and are currently
-             * not implemented in this EMI interface. See CMG EMI/UCP spec 4.0,
+             * XSer 03-0b are for CDMA/TDMA information exchange and are currently
+             * not implemented in this EMI interface. See CMG EMI/UCP spec 4.6,
              * section 5.1.2.4 for more information.
              */
 
@@ -729,7 +739,7 @@ static int handle_operation(SMSCConn *conn, Connection *server,
                          octstr_get_cstr(privdata->name));
                 break;
 
-            /* XSer fields 0e-ff are reserved for future use. */
+            /* XSer fields 0e-ff are reserved for future use and should not be used. */
 
             default:
                 warning(0, "EMI2[%s]: Unsupported EMI XSer field %d",
@@ -755,7 +765,7 @@ static int handle_operation(SMSCConn *conn, Connection *server,
         if (privdata->alt_charset == EMI_NRC_ISO_21)
             charset_nrc_iso_21_german_to_gsm(msg->sms.msgdata);
 
-	    charset_gsm_to_latin1(msg->sms.msgdata);
+	    charset_gsm_to_utf8(msg->sms.msgdata);
 	}
 	else if (octstr_get_char(emimsg->fields[E50_MT], 0) == '4') {
 	    msg->sms.msgdata = emimsg->fields[E50_TMSG];
@@ -861,13 +871,19 @@ static int handle_operation(SMSCConn *conn, Connection *server,
 	     * Recode the msg structure with the given msgdata.
 	     * Note: the DLR URL is delivered in msg->sms.dlr_url already.
 	     */
-	    if((emimsg->fields[E50_AMSG]) == NULL)
-		msg->sms.msgdata = octstr_create("Delivery Report without text");
-	    else
-		msg->sms.msgdata = octstr_duplicate(emimsg->fields[E50_AMSG]);
-	    octstr_hex_to_binary(msg->sms.msgdata);
-	    bb_smscconn_receive(conn, msg);
-	}
+        if ((emimsg->fields[E50_AMSG]) == NULL)
+            msg->sms.msgdata = octstr_create("Delivery Report without text");
+        else
+            msg->sms.msgdata = octstr_duplicate(emimsg->fields[E50_AMSG]);
+        octstr_hex_to_binary(msg->sms.msgdata);
+        if (octstr_get_char(emimsg->fields[E50_MT], 0) == '3') {
+            /* obey the NRC (national replacement codes) */
+            if (privdata->alt_charset == EMI_NRC_ISO_21)
+                charset_nrc_iso_21_german_to_gsm(msg->sms.msgdata);
+            charset_gsm_to_utf8(msg->sms.msgdata);
+        }
+        bb_smscconn_receive(conn, msg);
+    }
 	reply = emimsg_create_reply(53, emimsg->trn, 1, privdata->name);
 	if (emi2_emimsg_send(conn, server, reply) < 0) {
 	    emimsg_destroy(reply);

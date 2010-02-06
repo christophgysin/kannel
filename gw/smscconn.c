@@ -1,7 +1,7 @@
 /* ==================================================================== 
  * The Kannel Software License, Version 1.0 
  * 
- * Copyright (c) 2001-2005 Kannel Group  
+ * Copyright (c) 2001-2009 Kannel Group  
  * Copyright (c) 1998-2001 WapIT Ltd.   
  * All rights reserved. 
  * 
@@ -228,6 +228,9 @@ SMSCConn *smscconn_create(CfgGroup *grp, int start_as_stopped)
 
     if (cfg_get_integer(&conn->log_level, grp, octstr_imm("log-level")) == -1)
         conn->log_level = 0;
+
+    if (cfg_get_integer(&conn->max_sms_octets, grp, octstr_imm("max-sms-octets")) == -1)
+        conn->max_sms_octets = MAX_SMS_OCTETS;
 
     /* open a smsc-id specific log-file in exlusive mode */
     if (conn->log_file)
@@ -512,7 +515,7 @@ int smscconn_send(SMSCConn *conn, Msg *msg)
 
         /* split msg */
         parts = sms_split(msg, NULL, NULL, NULL, NULL, 1, 
-            counter_increase(split_msg_counter) & 0xff, 0xff, MAX_SMS_OCTETS);
+            counter_increase(split_msg_counter) & 0xff, 0xff, conn->max_sms_octets);
         if (gwlist_len(parts) == 1) {
             /* don't create split_parts of sms fit into one */
             gwlist_destroy(parts, msg_destroy_item);

@@ -1,7 +1,7 @@
 /* ==================================================================== 
  * The Kannel Software License, Version 1.0 
  * 
- * Copyright (c) 2001-2005 Kannel Group  
+ * Copyright (c) 2001-2009 Kannel Group  
  * Copyright (c) 1998-2001 WapIT Ltd.   
  * All rights reserved. 
  * 
@@ -82,8 +82,8 @@
 #define PNT_INTER       1
 #define PNT_NATIONAL    2
 
-/* The number of times to attempt to send a message should sending fail */
-#define RETRY_SEND 3
+/* The number of times to attempt to write a line should writing fail */
+#define RETRY_WRITE 3
 
 /* 
  * defines for use with the so-called "SIM buffering techinique":
@@ -135,14 +135,19 @@ typedef struct PrivAT2data {
     Octstr *sms_center;
     Octstr *name;
     Octstr *configfile;
+    Octstr *username;
+    Octstr *password;
+    Octstr *login_prompt;
+    Octstr *password_prompt;
     int	sms_memory_poll_interval;
     int	sms_memory_capacity;
     int	sms_memory_usage;
     List *pending_incoming_messages;
-    int max_error_count;
+    long max_error_count;
     Octstr *rawtcp_host;
     int rawtcp_port;
     int is_serial; /* false if device is rawtcp */ 
+    int use_telnet; /* use telnet escape sequences */
  } PrivAT2data;
 
 

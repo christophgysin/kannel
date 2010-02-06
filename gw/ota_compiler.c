@@ -1,7 +1,7 @@
 /* ==================================================================== 
  * The Kannel Software License, Version 1.0 
  * 
- * Copyright (c) 2001-2005 Kannel Group  
+ * Copyright (c) 2001-2009 Kannel Group  
  * Copyright (c) 1998-2001 WapIT Ltd.   
  * All rights reserved. 
  * 
@@ -234,8 +234,9 @@ static ota_3table_t ota_attributes[] = {
  */
 
 static ota_3table_t oma_ota_attributes[] = {
-    { "VERSION", "1.0", 0x46 },
     { "VERSION", "INLINE", 0x45 },  
+    { "VERSION", "1.0", 0x46 },
+    { "TYPE", "INLINE", 0x50 },
     { "TYPE", "PXLOGICAL", 0x51 },
     { "TYPE", "PXPHYSICAL", 0x52 },
     { "TYPE", "PORT", 0x53 },
@@ -246,12 +247,19 @@ static ota_3table_t oma_ota_attributes[] = {
     { "TYPE", "PXAUTHINFO", 0x59 },
     { "TYPE", "NAPAUTHINFO", 0x5A },
     { "TYPE", "ACCESS", 0x5B },
+    { "TYPE", "BEARERINFO", 0x5C },
+    { "TYPE", "DNS-ADDRINFO", 0x5D },
     { "TYPE", "CLIENTIDENTITY", 0x58 },
     { "TYPE", "APPLICATION", 0x55, 1 },
     { "TYPE", "APPADDR", 0x56, 1 },
     { "TYPE", "APPAUTH", 0x57, 1 },
     { "TYPE", "RESOURCE", 0x59, 1 },
-    { "TYPE", "INLINE", 0x50 },
+    { "TYPE", "WLAN", 0x5A, 1 },
+    { "TYPE", "SEC-SSID", 0x5B, 1 },
+    { "TYPE", "EAP", 0x5C, 1 },
+    { "TYPE", "CERT", 0x5D, 1 },
+    { "TYPE", "WEPKEY", 0x5E, 1 },
+    { "NAME", "INLINE", 0x5 },
     { "NAME", "NAME", 0x7 },
     { "NAME", "NAP-ADDRESS", 0x8 },
     { "NAME", "NAP-ADDRTYPE", 0x9 },
@@ -331,7 +339,46 @@ static ota_3table_t oma_ota_attributes[] = {
     { "NAME", "TO-PROXY", 0x39, 1 },
     { "NAME", "URI", 0x3A, 1 },
     { "NAME", "RULE", 0x3B, 1 },
-    { "NAME", "INLINE", 0x5 },
+    { "NAME", "APPREF", 0x3C, 1 },
+    { "NAME", "TO-APPREF", 0x3D, 1 },
+    { "NAME", "PRI-SSID", 0x3E, 1 },
+    { "NAME", "PRI-U-SSID", 0x3F, 1 },
+    { "NAME", "PRI-H-SSID", 0x40, 1 },
+    { "NAME", "S-SSID", 0x41, 1 },
+    { "NAME", "S-U-SSID", 0x42, 1 },
+    { "NAME", "NETMODE", 0x43, 1 },
+    { "NAME", "SECMODE", 0x44, 1 },
+    { "NAME", "EAPTYPE", 0x45, 1 },
+    { "NAME", "USERNAME", 0x46, 1 },
+    { "NAME", "PASSWORD", 0x47, 1 },
+    { "NAME", "REALM", 0x48, 1 },
+    { "NAME", "USE-PSEUD", 0x49, 1 },
+    { "NAME", "ENCAPS", 0x5B, 1 },
+    { "NAME", "VER-SER-REALM", 0x4C, 1 },
+    { "NAME", "CLIENT-AUTH", 0x4D, 1 },
+    { "NAME", "SES-VAL-TIME", 0x4E, 1 },
+    { "NAME", "CIP-SUIT", 0x4F, 1 },
+    { "NAME", "PEAP-V0", 0x60, 1 },
+    { "NAME", "PEAP-V1", 0x61, 1 },
+    { "NAME", "PEAP-V2", 0x62, 1 },
+    { "NAME", "ISS-NAME", 0x63, 1 },
+    { "NAME", "SUB-NAME", 0x64, 1 },
+    { "NAME", "CERT-TYPE", 0x65, 1 },
+    { "NAME", "SER-NUM", 0x66, 1 },
+    { "NAME", "SUB-KEY-ID", 0x67, 1 },
+    { "NAME", "THUMBPRINT", 0x68, 1 },
+    { "NAME", "WPA-PRES-KEY-ASC", 0x69, 1 },
+    { "NAME", "WPA-PRES-KEY-HEX", 0x6A, 1 },
+    { "NAME", "WEPKEYIND", 0x6B, 1 },
+    { "NAME", "WEPAUTHMODE", 0x6C, 1 },
+    { "NAME", "LENGTH", 0x6D, 1 },
+    { "NAME", "INDEX", 0x6E, 1 },
+    { "NAME", "DATA", 0x6F, 1 },
+    { "NAME", "WLANHAND", 0x70, 1 },
+    { "NAME", "EDIT-SET", 0x71, 1 },
+    { "NAME", "VIEW-SET", 0x72, 1 },
+    { "NAME", "FORW-SET", 0x73, 1 },
+    { "VALUE", "INLINE", 0x6 },     
     { "VALUE", "IPV4", 0x85 },
     { "VALUE", "IPV6", 0x86 },
     { "VALUE", "E164", 0x87 },
@@ -379,6 +426,8 @@ static ota_3table_t oma_ota_attributes[] = {
     { "VALUE", "MOBITEX-MPAK", 0xB8 },
     { "VALUE", "CDMA2000-1X-SIMPLE-IP", 0xB9 },
     { "VALUE", "CDMA2000-1X-MOBILE-IP", 0xBA },
+    { "VALUE", "3G-GSM", 0xBB },
+    { "VALUE", "WLAN", 0xBC },
     { "VALUE", "AUTOBAUDING", 0xC5 },
     { "VALUE", "CL-WSP", 0xCA },
     { "VALUE", "CO-WSP", 0xCB },
@@ -396,7 +445,6 @@ static ota_3table_t oma_ota_attributes[] = {
     { "VALUE", "DIGEST", 0x93, 1 },
     { "VALUE", "AAA", 0xE0 },
     { "VALUE", "HA", 0xE1 },
-    { "VALUE", "INLINE", 0x6 },     
 };
 
 #define OMA_VALUE_TAG 0x06
@@ -472,7 +520,7 @@ static int parse_document(xmlDocPtr document, Octstr *charset,
     xmlNodePtr node;
 
     if (document->intSubset && document->intSubset->ExternalID 
-        && strcmp(document->intSubset->ExternalID, "-//WAPFORUM//DTD PROV 1.0//EN") == 0) {
+        && strcmp((char *)document->intSubset->ExternalID, "-//WAPFORUM//DTD PROV 1.0//EN") == 0) {
         /* OMA ProvCont */
         (*otabxml)->wbxml_version = 0x03; /* WBXML Version number 1.3  */
         (*otabxml)->public_id = 0x0B; /* Public id for this kind of doc */  
@@ -560,7 +608,6 @@ static int parse_node(xmlNodePtr node, simple_binary_t **otabxml)
  */
 static int parse_ota_syncsettings(xmlNodePtr node, simple_binary_t **otabxml)
 {
-    xmlNodePtr childNode;
     Octstr *name, *content;
     unsigned char status_bits, ota_hex;
     int add_end_tag;
@@ -568,7 +615,7 @@ static int parse_ota_syncsettings(xmlNodePtr node, simple_binary_t **otabxml)
 
     name = NULL;
     content = NULL;
-    name = octstr_create(node->name);
+    name = octstr_create((char *)node->name);
     if (octstr_len(name) == 0) {
         goto error;
     }
@@ -589,8 +636,8 @@ static int parse_ota_syncsettings(xmlNodePtr node, simple_binary_t **otabxml)
 
     /* if the node has CDATA content output it. 
      * Else expect child tags */
-    if (!only_blanks(node->children->content)) {
-        content = octstr_create(node->children->content);
+    if (!only_blanks((char *)node->children->content)) {
+        content = octstr_create((char *)node->children->content);
         parse_inline_string(content, otabxml);
     }
 
@@ -641,7 +688,7 @@ static int parse_element(xmlNodePtr node, simple_binary_t **otabxml)
         }
     }
 
-    name = octstr_create(node->name);
+    name = octstr_create((char *)node->name);
     if (octstr_len(name) == 0) {
         octstr_destroy(name);
         return -1;
@@ -705,10 +752,10 @@ static int parse_attribute(xmlAttrPtr attr, simple_binary_t **otabxml)
     size_t i, limit;
     ota_3table_t *alist;
 
-    name = octstr_create(attr->name);
+    name = octstr_create((char *)attr->name);
 
     if (attr->children != NULL)
-        value = create_octstr_from_node(attr->children);
+        value = create_octstr_from_node((char *)attr->children);
     else 
         value = NULL;
 
@@ -765,6 +812,12 @@ static int parse_attribute(xmlAttrPtr attr, simple_binary_t **otabxml)
             output_char(OMA_VALUE_TAG, otabxml);
         output_char(ota_hex, otabxml);
     } else {
+        /* Switch code page. */
+        if (alist[i].code_page != (*otabxml)->code_page) {
+            output_char(0, otabxml);
+            output_char(alist[i].code_page, otabxml);
+            (*otabxml)->code_page = alist[i].code_page;
+        }
         output_char(ota_hex, otabxml);
         parse_inline_string(value, otabxml);
     }  

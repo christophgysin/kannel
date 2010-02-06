@@ -1,7 +1,7 @@
 /* ==================================================================== 
  * The Kannel Software License, Version 1.0 
  * 
- * Copyright (c) 2001-2005 Kannel Group  
+ * Copyright (c) 2001-2009 Kannel Group  
  * Copyright (c) 1998-2001 WapIT Ltd.   
  * All rights reserved. 
  * 
@@ -245,6 +245,17 @@ error:
 }
 
 
+/*
+ * Wrapper function needed for function pointer forwarding to storage
+ * subsystem. We can't pass the msg_unpack() pre-processor macro, so we
+ * need to wrapp a function arround it.
+ */
+inline Msg *msg_unpack_wrapper(Octstr *os)
+{
+    return msg_unpack(os);
+}
+
+
 /**********************************************************************
  * Implementations of private functions.
  */
@@ -255,7 +266,7 @@ static void append_integer(Octstr *os, long i)
     unsigned char buf[4];
 
     encode_network_long(buf, i);
-    octstr_append_data(os, buf, 4);
+    octstr_append_data(os, (char *)buf, 4);
 }
 
 static void append_string(Octstr *os, Octstr *field)
@@ -287,7 +298,7 @@ static int parse_integer(long *i, Octstr *packed, int *off)
         return -1;
     }
 
-    octstr_get_many_chars(buf, packed, *off, 4);
+    octstr_get_many_chars((char *)buf, packed, *off, 4);
     *i = decode_network_long(buf);
     *off += 4;
     return 0;

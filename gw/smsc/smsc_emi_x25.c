@@ -1,7 +1,7 @@
 /* ==================================================================== 
  * The Kannel Software License, Version 1.0 
  * 
- * Copyright (c) 2001-2005 Kannel Group  
+ * Copyright (c) 2001-2009 Kannel Group  
  * Copyright (c) 1998-2001 WapIT Ltd.   
  * All rights reserved. 
  * 
@@ -252,7 +252,7 @@ static int emi_open_session(SMSCenter *smsc)
     /* FOOTER */
 
     sprintf(my_buffer, "%s/%s/", message_header, message_body);
-    generate_checksum(my_buffer, message_footer);
+    generate_checksum((unsigned char *)my_buffer, (unsigned char *)message_footer);
 
     sprintf(message_whole, "\x02%s/%s/%s\x03", message_header,
             message_body, message_footer);
@@ -496,11 +496,31 @@ static int at_dial(char *device, char *phonenum, char *at_prefix, time_t how_lon
 
     /* The speed initialisation is pretty important. */
     tcgetattr(fd, &tios);
+#if defined(B115200)
     cfsetospeed(&tios, B115200);
     cfsetispeed(&tios, B115200);
+#elif defined(B76800)
+    cfsetospeed(&tios, B76800);
+    cfsetispeed(&tios, B76800);
+#elif defined(B57600)
+    cfsetospeed(&tios, B57600);
+    cfsetispeed(&tios, B57600);
+#elif defined(B38400)
+    cfsetospeed(&tios, B38400);
+    cfsetispeed(&tios, B38400);
+#elif defined(B19200)
+    cfsetospeed(&tios, B19200);
+    cfsetispeed(&tios, B19200);
+#elif defined(B9600)
+    cfsetospeed(&tios, B9600);
+    cfsetispeed(&tios, B9600);
+#endif
     kannel_cfmakeraw(&tios);
     tios.c_cflag |= (HUPCL | CREAD | CRTSCTS);
-    tcsetattr(fd, TCSANOW, &tios);
+    ret = tcsetattr(fd, TCSANOW, &tios);
+    if (ret == -1) {
+        error(errno, "EMI[X25]: at_dial: fail to set termios attribute");
+    }
 
     /* Dial using an AT command string. */
     for (redial = 1; redial; ) {
@@ -998,7 +1018,7 @@ static int acknowledge_from_rawmessage(SMSCenter *smsc,
 
     /* FOOTER */
     sprintf(timestamp, "%s/%s/", emitext, isotext);
-    generate_checksum(timestamp, receiver);
+    generate_checksum((unsigned char *)timestamp, (unsigned char *)receiver);
 
     sprintf(sender, "%c%s/%s/%s%c", 0x02, emitext, isotext, receiver, 0x03);
     put_data(smsc, sender, strlen(sender), is_backup);
@@ -1105,7 +1125,7 @@ static int parse_msg_to_rawmessage(SMSCenter *smsc, Msg *msg, char *rawmessage, 
     /* FOOTER */
 
     sprintf(my_buffer, "%s/%s/", message_header, message_body);
-    generate_checksum(my_buffer, message_footer);
+    generate_checksum((unsigned char *)my_buffer, (unsigned char *)message_footer);
 
     sprintf(message_whole, "%c%s/%s/%s%c", 0x02, message_header, message_body, message_footer, 0x03);
 
@@ -1205,7 +1225,7 @@ static void generate_checksum(const unsigned char *buf, unsigned char *out)
             j -= 256;
     }
 
-    sprintf(out, "%02X", j);
+    sprintf((char *)out, "%02X", j);
 }
 
 

@@ -1,7 +1,7 @@
 /* ==================================================================== 
  * The Kannel Software License, Version 1.0 
  * 
- * Copyright (c) 2001-2005 Kannel Group  
+ * Copyright (c) 2001-2009 Kannel Group  
  * Copyright (c) 1998-2001 WapIT Ltd.   
  * All rights reserved. 
  * 
@@ -166,6 +166,12 @@ int udp_recvfrom(int s, Octstr **datagram, Octstr **addr);
  * Create an Octstr of character representation of an IP
  */
 Octstr *host_ip(struct sockaddr_in addr);
+
+
+/*
+ * Return the port number of an IP connection.
+ */
+int host_port(struct sockaddr_in addr);
 
 
 /*

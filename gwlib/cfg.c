@@ -1,7 +1,7 @@
 /* ==================================================================== 
  * The Kannel Software License, Version 1.0 
  * 
- * Copyright (c) 2001-2005 Kannel Group  
+ * Copyright (c) 2001-2009 Kannel Group  
  * Copyright (c) 1998-2001 WapIT Ltd.   
  * All rights reserved. 
  * 
@@ -186,7 +186,8 @@ static int core_is_allowed_in_group(Octstr *group, Octstr *variable)
 	}
     #include "cfg.def"
 
-    return 0;
+    /* unknown group identifier */
+    return -1;
 }
 
 
@@ -207,14 +208,15 @@ static int core_is_single_group(Octstr *query)
 static int is_allowed_in_group(Octstr *group, Octstr *variable)
 {
     long i;
-    int r = 0;
+    int x, r = -1;
 
     for (i = 0; i < gwlist_len(allowed_hooks); ++i) {
-        r += ((int(*)(Octstr *, Octstr *))
+        x = ((int(*)(Octstr *, Octstr *))
             gwlist_get(allowed_hooks, i))(group, variable);
+        r = (x == -1 ? (r == -1 ? x : r) : (r == -1 ? x : r + x));
     }
 
-    return (r > 0);
+    return r;
 }
 
 
@@ -239,8 +241,6 @@ void cfg_add_hooks(void *allowed, void *single)
 }
 
 
-
-
 static int add_group(Cfg *cfg, CfgGroup *grp)
 {
     Octstr *groupname;
@@ -250,34 +250,48 @@ static int add_group(Cfg *cfg, CfgGroup *grp)
     
     groupname = cfg_get(grp, octstr_imm("group"));
     if (groupname == NULL) {
-	error(0, "Group does not contain variable 'group'.");
-    	return -1;
+        error(0, "Group does not contain variable 'group'.");
+        return -1;
     }
     set_group_name(grp, groupname);
 
     names = dict_keys(grp->vars);
+
     while ((name = gwlist_extract_first(names)) != NULL) {
-	if (!is_allowed_in_group(groupname, name)) {
-	    error(0, "Group '%s' may not contain field '%s'.",
-		  octstr_get_cstr(groupname), octstr_get_cstr(name));
-	    octstr_destroy(name);
-	    octstr_destroy(groupname);
-	    gwlist_destroy(names, octstr_destroy_item);
-	    return -1;
-	}
-	octstr_destroy(name);
+        int a = is_allowed_in_group(groupname, name);
+        switch (a) {
+            case 0:
+                error(0, "Group '%s' may not contain field '%s'.",
+                      octstr_get_cstr(groupname), octstr_get_cstr(name));
+                octstr_destroy(name);
+                octstr_destroy(groupname);
+                gwlist_destroy(names, octstr_destroy_item);
+                return -1;
+                break;
+            case -1:
+                error(0, "Group '%s' is no valid group identifier.",
+                      octstr_get_cstr(groupname));
+                octstr_destroy(name);
+                octstr_destroy(groupname);
+                gwlist_destroy(names, octstr_destroy_item);
+                return -1;
+                break;
+            default:
+                octstr_destroy(name);
+                break;
+        }
     }
     gwlist_destroy(names, NULL);
 
-    if (is_single_group(groupname))
-    	dict_put(cfg->single_groups, groupname, grp);
-    else {
-	list = dict_get(cfg->multi_groups, groupname);
-	if (list == NULL) {
-	    list = gwlist_create();
-	    dict_put(cfg->multi_groups, groupname, list);
-	}
-    	gwlist_append(list, grp);
+    if (is_single_group(groupname)) {
+        dict_put(cfg->single_groups, groupname, grp);
+    } else {
+        list = dict_get(cfg->multi_groups, groupname);
+        if (list == NULL) {
+            list = gwlist_create();
+            dict_put(cfg->multi_groups, groupname, list);
+        }
+        gwlist_append(list, grp);
     }
 
     octstr_destroy(groupname);
@@ -294,13 +308,6 @@ Cfg *cfg_create(Octstr *filename)
     cfg->single_groups = dict_create(64, destroy_group);
     cfg->multi_groups = dict_create(64, destroy_group_list);
 
-   /* make sure we put our own core hooks into the lists */
-    allowed_hooks = gwlist_create();
-    single_hooks = gwlist_create();
-
-    gwlist_append(allowed_hooks, &core_is_allowed_in_group);
-    gwlist_append(single_hooks, &core_is_single_group);
-
     return cfg;
 }
 
@@ -308,10 +315,10 @@ Cfg *cfg_create(Octstr *filename)
 void cfg_destroy(Cfg *cfg)
 {
     if (cfg != NULL) {
-	octstr_destroy(cfg->filename);
-	dict_destroy(cfg->single_groups);
-	dict_destroy(cfg->multi_groups);
-	gw_free(cfg);
+        octstr_destroy(cfg->filename);
+        dict_destroy(cfg->single_groups);
+        dict_destroy(cfg->multi_groups);
+        gw_free(cfg);
     }
 }
 
@@ -514,12 +521,14 @@ int cfg_read(Cfg *cfg)
                             Octstr *fileitem;
 
                             fileitem = octstr_duplicate(filename);
-                            octstr_append(fileitem, octstr_create("/"));
-                            octstr_append(fileitem, octstr_create(diritem->d_name));
+                            octstr_append_cstr(fileitem, "/");
+                            octstr_append_cstr(fileitem, diritem->d_name);
 
                             lstat(octstr_get_cstr(fileitem), &filestat);
                             if (!S_ISDIR(filestat.st_mode)) {
                                 gwlist_insert(files, 0, fileitem);
+                            } else {
+                            	octstr_destroy(fileitem);
                             }
                         }
                         closedir(dh);
@@ -571,7 +580,8 @@ int cfg_read(Cfg *cfg)
                     grp = create_group(); 
                  
                 if (grp->configfile != NULL) {
-                    octstr_destroy(grp->configfile); grp->configfile=NULL;
+                    octstr_destroy(grp->configfile); 
+                    grp->configfile = NULL;
                 }
                 grp->configfile = octstr_duplicate(cfg->filename); 
 
@@ -781,6 +791,7 @@ void cfg_dump(Cfg *cfg)
     debug("gwlib.cfg", 0, "Dump ends.");
 }
 
+
 void cfg_dump_all(void)
 {
     #define OCTSTR(name) \
@@ -796,4 +807,23 @@ void cfg_dump_all(void)
         fields; \
         printf("\n\n");
     #include "cfg.def"
+}
+
+
+void cfg_init(void)
+{
+    /* make sure we put our own core hooks into the lists */
+    allowed_hooks = gwlist_create();
+    single_hooks = gwlist_create();
+
+    gwlist_append(allowed_hooks, &core_is_allowed_in_group);
+    gwlist_append(single_hooks, &core_is_single_group);
+}
+
+
+void cfg_shutdown(void)
+{
+    gwlist_destroy(allowed_hooks, NULL);
+    gwlist_destroy(single_hooks, NULL);
+    allowed_hooks = single_hooks = NULL;
 }

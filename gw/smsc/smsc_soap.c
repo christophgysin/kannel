@@ -1,7 +1,7 @@
 /* ==================================================================== 
  * The Kannel Software License, Version 1.0 
  * 
- * Copyright (c) 2001-2005 Kannel Group  
+ * Copyright (c) 2001-2009 Kannel Group  
  * Copyright (c) 1998-2001 WapIT Ltd.   
  * All rights reserved. 
  * 
@@ -223,8 +223,7 @@ typedef struct argument_map {
 /* useful macros go here (some of these were ripped of other modules,
    so maybe its better to put them in a shared file) */
 #define	O_DESTROY(a)	{ if(a) octstr_destroy(a); a=NULL; }
-typedef long long int64;
- 
+
 /*
  * SOAP module public API towards bearerbox
  */
@@ -265,7 +264,7 @@ static void soap_read_response(SMSCConn *conn);
 static Octstr *soap_format_xml(Octstr *xml_file, Msg *msg, PrivData *privdata);
 /* parse a response from the SOAP server to get the message ID */
 
-static int64 soap_parse_response(PrivData *privdata, Octstr *xmlResponse);
+static long long soap_parse_response(PrivData *privdata, Octstr *xmlResponse);
 /* parse an incoming MO xml */
 static long soap_parse_mo(SMSCConn *conn, Octstr *request, Octstr **response);
 /* parse an incoming derlivery report */
@@ -277,7 +276,7 @@ static long soap_parse_dlr(SMSCConn *conn, Octstr *request, Octstr **response);
 /* parse an integer out of a XML node */
 int soap_xmlnode_get_long(xmlNodePtr cur, long *out);
 /* parse an int64 out of a XML node */
-int soap_xmlnode_get_int64(xmlNodePtr cur, int64 *out);
+int soap_xmlnode_get_int64(xmlNodePtr cur, long long *out);
 /* parse a string out of a XML node */
 int soap_xmlnode_get_octstr(xmlNodePtr cur, Octstr **out);
 /* convert a one2one date format to epoch time */
@@ -1123,7 +1122,7 @@ static void soap_read_response(SMSCConn *conn)
     Octstr *responseBody, *responseURL;
     List* responseHeaders;
     int responseStatus;
-    int64 msgID;
+    long long msgID;
     ClientData* cd;
 
     /* don't get in here unless I have some callers */
@@ -1203,9 +1202,9 @@ static void soap_read_response(SMSCConn *conn)
  *                but if gwlist_get() returns NULL for an empty item, things might break - and
  *                not in a nice way.
  **/
-static int64 soap_parse_response(PrivData* privdata, Octstr* xmlResponse)
+static long long soap_parse_response(PrivData* privdata, Octstr* xmlResponse)
 {
-    int64 msgID = -1;
+    long long msgID = -1;
     long responseStatus = -1;
     xmlDocPtr responseDoc;
     xmlNodePtr root;
@@ -1219,7 +1218,7 @@ static int64 soap_parse_response(PrivData* privdata, Octstr* xmlResponse)
     /* FIXME: do something here */
 
     /* parse XML */
-    if ( !(responseDoc = xmlParseDoc(octstr_get_cstr(xmlResponse))) ) {
+    if ( !(responseDoc = xmlParseDoc((xmlChar *)octstr_get_cstr(xmlResponse))) ) {
         error(0,"SOAP[%s]: couldn't parse XML response [ %s ] in MT parsing",
               octstr_get_cstr(privdata->name), octstr_get_cstr(xmlResponse));
         return -1;
@@ -1286,7 +1285,7 @@ static long soap_parse_mo(SMSCConn *conn, Octstr *request, Octstr **response)
 
     List* maps;
     char receiver[30], sender[30], msgtype[30], msgdata[255], date[30];
-    int64 msgid = -1;
+    long long msgid = -1;
     char* keywords[] = { "receiver", "sender", "msgtype", "msgdata", "date", "id" };
     char* sscans[] = { "%s", "%s", "%s", "%s", "%s", "%lld" };
     void* pointers[] = { &receiver, &sender, &msgtype, &msgdata, &date, &msgid };
@@ -1322,7 +1321,7 @@ static long soap_parse_mo(SMSCConn *conn, Octstr *request, Octstr **response)
     debug("bb.soap.parse_mo",0,"SOAP[%s]: parse_mo  - MO request dump <%s>", octstr_get_cstr(privdata->name),octstr_get_cstr(request));
 
     /* parse XML */
-    if ( !(requestDoc = xmlParseDoc(octstr_get_cstr(request))) ) {
+    if ( !(requestDoc = xmlParseDoc((xmlChar *)octstr_get_cstr(request))) ) {
         error(0,"SOAP[%s]: parse_mo couldn't parse XML response", octstr_get_cstr(privdata->name));
         return -1;
     }
@@ -1558,7 +1557,7 @@ static long soap_parse_dlr(SMSCConn *conn, Octstr *request, Octstr **response)
 
     /* parse XML */
 
-    if ( !(requestDoc = xmlParseDoc(octstr_get_cstr(request))) ) {
+    if ( !(requestDoc = xmlParseDoc((xmlChar *)octstr_get_cstr(request))) ) {
         error(0,"SOAP[%s]: parse_dlr couldn't parse XML response", octstr_get_cstr(privdata->name));
         return -1;
     }
@@ -1692,7 +1691,7 @@ int soap_xmlnode_get_long(xmlNodePtr cur, long* out)
     }
 
     /* read the content into output */
-    *out = strtol(nodeContent,&endPointer,10);
+    *out = strtol((char *)nodeContent,&endPointer,10);
     xmlFree(nodeContent);
 
     if (endPointer == (char*)nodeContent) {
@@ -1705,12 +1704,12 @@ int soap_xmlnode_get_long(xmlNodePtr cur, long* out)
 
 /*
  * function soap_xmlnode_get_int64()
- *	parse the content of an XML node and return it as an int64
+ *	parse the content of an XML node and return it as an long long
  * Input: xmlNodePtr to node
  * Output: long parsed
  * Returns: 0 on success, -1 on failure
  **/
-int soap_xmlnode_get_int64(xmlNodePtr cur, int64* out)
+int soap_xmlnode_get_int64(xmlNodePtr cur, long long* out)
 {
     xmlChar* nodeContent;
     char* endPointer;
@@ -1726,7 +1725,7 @@ int soap_xmlnode_get_int64(xmlNodePtr cur, int64* out)
 
 
     /* read the content into output */
-    *out = strtoll(nodeContent,&endPointer,10);
+    *out = strtoll((char *)nodeContent,&endPointer,10);
     xmlFree(nodeContent);
 
     if (endPointer == (char*)nodeContent) {
@@ -1758,7 +1757,7 @@ int soap_xmlnode_get_octstr(xmlNodePtr cur, Octstr **out)
     }
 
     /* store the content into output */
-    *out = octstr_create(nodeContent);
+    *out = octstr_create((char *)nodeContent);
     xmlFree(nodeContent);
 
     if (*out)
@@ -2198,7 +2197,7 @@ Octstr* soap_fetch_xml_data(xmlNodePtr xml, Octstr* path)
         /* get the next path element */
         temp = gwlist_get(path_elements, index);
         do {
-            if (!octstr_str_compare(temp,node->name)) {
+            if (!octstr_str_compare(temp,(char *)node->name)) {
                 /* found what we're looking for */
                 if (!(node->xmlChildrenNode) && index < (gwlist_len(path_elements)-1)) {
                     /* while this is indeed the item we are looking for, it's not the end
@@ -2251,9 +2250,9 @@ Octstr* soap_fetch_xml_data(xmlNodePtr xml, Octstr* path)
      * is stored in parent */
     if (attr_name) { /* The caller wants to get an attribute */
         xmlChar* content;
-        content = xmlGetProp(parent, octstr_get_cstr(attr_name));
+        content = xmlGetProp(parent, (xmlChar *)octstr_get_cstr(attr_name));
         if (content)
-            temp = octstr_create(content);
+            temp = octstr_create((char *)content);
         else /* dont treat an empty or non-existant attribute as an error right away */
             temp = octstr_create("");
         xmlFree(content);
@@ -2261,7 +2260,7 @@ Octstr* soap_fetch_xml_data(xmlNodePtr xml, Octstr* path)
         xmlChar* content;
         content = xmlNodeGetContent(parent);
         if (content)
-            temp = octstr_create(content);
+            temp = octstr_create((char *)content);
         else /* don't treat an empty tag an error right away */
             temp = octstr_create("");
         xmlFree(content);
@@ -2303,7 +2302,7 @@ int soap_map_xml_data(xmlNodePtr xml, List* maps)
             /* get the next path element */
             temp = gwlist_get(path_elements, index);
             do {
-                if (!octstr_str_compare(temp,node->name)) {
+                if (!octstr_str_compare(temp,(char *)node->name)) {
                     /* found what we're looking for */
                     if (!(node->xmlChildrenNode) && index < (gwlist_len(path_elements)-1)) {
                         /* while this is indeed the item we are looking for, it's not the end
@@ -2353,9 +2352,9 @@ int soap_map_xml_data(xmlNodePtr xml, List* maps)
 
             /* The user wants to get an attribute */
             xmlChar* content;
-            content = xmlGetProp(parent, octstr_get_cstr(map->attribute));
+            content = xmlGetProp(parent, (xmlChar *)octstr_get_cstr(map->attribute));
             if (content)
-                temp = octstr_create(content);
+                temp = octstr_create((char *)content);
             else /* dont treat an empty or non-existant attribute as an error right away */
                 temp = octstr_create("");
             xmlFree(content);
@@ -2364,7 +2363,7 @@ int soap_map_xml_data(xmlNodePtr xml, List* maps)
             xmlChar* content;
             content = xmlNodeGetContent(parent);
             if (content)
-                temp = octstr_create(content);
+                temp = octstr_create((char *)content);
             else /*  don't treat an empty tag an error right away */
 
                 temp = octstr_create("");
@@ -2748,8 +2747,8 @@ Octstr* soap_o2o_msgdata_attribute(Msg* msg, PrivData *privdata)
     }
     else if (msg->sms.coding == DC_7BIT || msg->sms.coding == DC_UNDEF) {
         /* convert message data to target encoding */
-        debug("bb.soap.o2o_msgdata_attribute", 0, "SOAP: converting from ISO-8859-1 to %s", octstr_get_cstr(privdata->alt_charset));
-        ret = charset_convert(data, "ISO-8859-1", octstr_get_cstr(privdata->alt_charset));
+        debug("bb.soap.o2o_msgdata_attribute", 0, "SOAP: converting from UTF-8 to %s", octstr_get_cstr(privdata->alt_charset));
+        ret = charset_convert(data, "UTF-8", octstr_get_cstr(privdata->alt_charset));
         if (ret == -1) {
             error(0,"SOAP: soap_o2o_msgdata_attribute, charset_convert failed");
             octstr_dump(msg->sms.msgdata, 0);
@@ -2804,8 +2803,8 @@ Octstr* soap_msgdata_attribute(Msg* msg, PrivData* privdata)
     }
     else if (msg->sms.coding == DC_7BIT || msg->sms.coding == DC_UNDEF) {
         /* convert message data to target encoding */
-        debug("bb.soap.msgdata_attribute", 0, "SOAP: converting from ISO-8859-1 to %s", octstr_get_cstr(privdata->alt_charset));
-        ret = charset_convert(data, "ISO-8859-1", octstr_get_cstr(privdata->alt_charset));
+        debug("bb.soap.msgdata_attribute", 0, "SOAP: converting from UTF-8 to %s", octstr_get_cstr(privdata->alt_charset));
+        ret = charset_convert(data, "UTF-8", octstr_get_cstr(privdata->alt_charset));
         if (ret == -1) {
             error(0,"SOAP: soap_msgdata_attribute, charset_convert failed");
             octstr_dump(msg->sms.msgdata, 0);

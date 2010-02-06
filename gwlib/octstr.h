@@ -1,7 +1,7 @@
 /* ==================================================================== 
  * The Kannel Software License, Version 1.0 
  * 
- * Copyright (c) 2001-2005 Kannel Group  
+ * Copyright (c) 2001-2009 Kannel Group  
  * Copyright (c) 1998-2001 WapIT Ltd.   
  * All rights reserved. 
  * 
@@ -304,6 +304,13 @@ int octstr_check_range(Octstr *ostr, long pos, long len,
 void octstr_convert_range(Octstr *ostr, long pos, long len, 
     	    	    	  octstr_func_t map);
 
+/*
+ * Use the octstr_convert_range() with make_printable() to ensure
+ * every char in the octstr can be printed in the current locale. Each
+ * character that is NOT printable is converted to a '.' (dot).
+ */
+void octstr_convert_printable(Octstr *ostr);
+
 
 /*
  * Compare two octet strings, returning 0 if they are equal, negative if
@@ -543,7 +550,7 @@ int octstr_item_case_match(void *item, void *pattern);
  */
 void octstr_dump_real(const Octstr *ostr, int level, ...);
 #define octstr_dump(ostr, level, ...) \
-    octstr_dump_real(ostr, level, ##__VA_ARGS__)
+    octstr_dump_real(ostr, level, GW_DEBUG, ##__VA_ARGS__)
 
 
 /*
