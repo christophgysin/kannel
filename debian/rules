@@ -46,7 +46,7 @@ endif
 		--prefix=/usr \
 		--mandir=\$${prefix}/share/man \
 		--infodir=\$${prefix}/share/info \
-		--disable-docs --enable-pam \
+		--disable-docs --enable-pam --enable-pcre \
 	        --enable-ssl --with-ssl=/usr \
 		--with-mysql --with-mysql-dir=/usr \
 		--with-sqlite2 \
@@ -73,7 +73,7 @@ endif
 		--prefix=/usr \
 		--mandir=\$${prefix}/share/man \
 		--infodir=\$${prefix}/share/info \
-		--enable-docs --enable-pam \
+		--enable-docs --enable-pam --enable-pcre \
 	        --enable-ssl --with-ssl=/usr \
 		--with-mysql --with-mysql-dir=/usr \
 		--with-sqlite2 \
