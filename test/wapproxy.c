@@ -1,7 +1,7 @@
 /* ==================================================================== 
  * The Kannel Software License, Version 1.0 
  * 
- * Copyright (c) 2001-2004 Kannel Group  
+ * Copyright (c) 2001-2005 Kannel Group  
  * Copyright (c) 1998-2001 WapIT Ltd.   
  * All rights reserved. 
  * 
@@ -82,7 +82,7 @@
  * Hence the wap device uses wapproxy transparently without knowing that
  * it is only a proxy and the packets are forwarded to other boxes.
  *
- * Stipe Tolj <tolj@wapme-systems.de>
+ * Stipe Tolj <stolj@wapme.de>
  */
 
 #include <errno.h>
@@ -111,6 +111,7 @@ static List *udpc_list;
 static Octstr *interface_name = NULL;
 static Octstr *wapgw;
 static int verbose = 0;
+static int server_port = 0;
 
 List *incoming_wdp;
 List *outgoing_wdp;
@@ -150,7 +151,9 @@ static WAPEvent *wdp_msg2event(Msg *msg)
 
     gw_assert(msg_type(msg) == wdp_datagram);
 
-    if (msg->wdp_datagram.destination_port == CONNECTION_ORIENTED_PORT ||
+    if (msg->wdp_datagram.destination_port == server_port ||
+        msg->wdp_datagram.source_port == server_port ||
+        msg->wdp_datagram.destination_port == CONNECTION_ORIENTED_PORT ||
         msg->wdp_datagram.source_port == CONNECTION_ORIENTED_PORT) {
 
         dgram = wap_event_create(T_DUnitdata_Ind);
@@ -200,14 +203,14 @@ static void wtp_event_dump(Msg *msg)
     */
 
     events = wtp_unpack_wdp_datagram(dgram);
-    n = list_len(events);
+    n = gwlist_len(events);
     debug("wap.proxy",0,"datagram contains %ld events", n);
 
     i = 1;
-    while (list_len(events) > 0) {
+    while (gwlist_len(events) > 0) {
         WAPEvent *event;
 
-	    event = list_extract_first(events);
+	    event = gwlist_extract_first(events);
         
         info(0, "WTP: %ld/%ld event %s.", i, n, wap_event_name(event->type));
 
@@ -236,7 +239,7 @@ static void wtp_event_dump(Msg *msg)
     }   		
 
     wap_event_destroy(dgram);
-    list_destroy(events, NULL);
+    gwlist_destroy(events, NULL);
 }
 
 
@@ -287,8 +290,8 @@ static void udp_receiver(void *arg)
     Udpc *conn = arg;
     Octstr *ip;
 
-    list_add_producer(incoming_wdp);
-    list_add_producer(flow_threads);
+    gwlist_add_producer(incoming_wdp);
+    gwlist_add_producer(flow_threads);
     gwthread_wakeup(MAIN_THREAD_ID);
     
     /* remove messages from socket until it is closed */
@@ -327,18 +330,18 @@ static void udp_receiver(void *arg)
          * corresponding queues
          */
         if (octstr_compare(conn->addr, conn->map_addr) == 0) {
-            list_produce(incoming_wdp, msg);
+            gwlist_produce(incoming_wdp, msg);
             counter_increase(incoming_wdp_counter);
         } else {
-            list_produce(outgoing_wdp, msg);
+            gwlist_produce(outgoing_wdp, msg);
 	        counter_increase(outgoing_wdp_counter);
         }        
 
         octstr_destroy(cliaddr);
         octstr_destroy(ip);
     }    
-    list_remove_producer(incoming_wdp);
-    list_remove_producer(flow_threads);
+    gwlist_remove_producer(incoming_wdp);
+    gwlist_remove_producer(flow_threads);
 }
 
 
@@ -366,10 +369,10 @@ static void udp_sender(void *arg)
     Msg *msg;
     Udpc *conn = arg;
 
-    list_add_producer(flow_threads);    
+    gwlist_add_producer(flow_threads);    
     while (1) {
 
-        if ((msg = list_consume(conn->outgoing_list)) == NULL)
+        if ((msg = gwlist_consume(conn->outgoing_list)) == NULL)
             break;
 
         info(0, "sending datagram <%s:%ld> -> <%s:%ld>",
@@ -390,7 +393,7 @@ static void udp_sender(void *arg)
     gwthread_join(conn->receiver);
 
     udpc_destroy(conn);
-    list_remove_producer(flow_threads);
+    gwlist_remove_producer(flow_threads);
 }
 
 
@@ -428,7 +431,7 @@ static Udpc *udpc_create(int port, char *interface_name, Octstr *map_addr)
 
     octstr_destroy(os);
     
-    udpc->outgoing_list = list_create();
+    udpc->outgoing_list = gwlist_create();
 
     return udpc;
 }    
@@ -442,8 +445,8 @@ static void udpc_destroy(Udpc *udpc)
     if (udpc->fd >= 0)
         close(udpc->fd);
     octstr_destroy(udpc->addr);
-    gw_assert(list_len(udpc->outgoing_list) == 0);
-    list_destroy(udpc->outgoing_list, NULL);
+    gw_assert(gwlist_len(udpc->outgoing_list) == 0);
+    gwlist_destroy(udpc->outgoing_list, NULL);
 
     gw_free(udpc);
 }    
@@ -455,7 +458,7 @@ static int add_service(int port, char *interface_name, Octstr *map_addr)
     
     if ((udpc = udpc_create(port, interface_name, map_addr)) == NULL)
         goto error;
-    list_add_producer(udpc->outgoing_list);
+    gwlist_add_producer(udpc->outgoing_list);
 
     udpc->receiver = gwthread_create(udp_receiver, udpc);
     if (udpc->receiver == -1)
@@ -464,7 +467,7 @@ static int add_service(int port, char *interface_name, Octstr *map_addr)
     if (gwthread_create(udp_sender, udpc) == -1)
         goto error;
 
-    list_append(udpc_list, udpc);
+    gwlist_append(udpc_list, udpc);
     return 0;
     
 error:    
@@ -486,12 +489,11 @@ static int udp_start(Cfg *cfg)
     
     debug("wap.proxy", 0, "starting UDP sender/receiver module");
 
-    udpc_list = list_create();	/* have a list of running systems */
+    udpc_list = gwlist_create();	/* have a list of running systems */
 
-    add_service(CONNECTION_ORIENTED_PORT, 
-                octstr_get_cstr(interface_name), NULL);  /* wsp/wtp */
+    add_service(server_port, octstr_get_cstr(interface_name), NULL);  /* wsp/wtp */
     
-    list_add_producer(incoming_wdp);
+    gwlist_add_producer(incoming_wdp);
     udp_running = 1;
     return 0;
 }
@@ -504,9 +506,9 @@ static Udpc *udpc_find_mapping(Msg *msg, int inbound)
     Octstr *addr;
     
     /* check if there is allready a bound UDP port */
-    list_lock(udpc_list);
-    for (i=0; i < list_len(udpc_list); i++) {
-        udpc = list_get(udpc_list, i);
+    gwlist_lock(udpc_list);
+    for (i=0; i < gwlist_len(udpc_list); i++) {
+        udpc = gwlist_get(udpc_list, i);
 
         /* decide if we compare against inbound or outbound traffic mapping */
         addr = inbound ? udpc->map_addr : udpc->addr;
@@ -514,11 +516,11 @@ static Udpc *udpc_find_mapping(Msg *msg, int inbound)
         if (msg->wdp_datagram.source_port == udp_get_port(addr) &&
             octstr_compare(msg->wdp_datagram.source_address, 
                            udp_get_ip(addr)) == 0) {
-            list_unlock(udpc_list);
+            gwlist_unlock(udpc_list);
             return udpc;
         }
     }
-    list_unlock(udpc_list);
+    gwlist_unlock(udpc_list);
     return NULL;
 }
 
@@ -555,7 +557,7 @@ static int udp_addwdp_from_server(Msg *msg)
 
     /* now search for our inbound UDP socket */
     os = octstr_duplicate(interface_name);
-    source = udp_create_address(os, CONNECTION_ORIENTED_PORT);
+    source = udp_create_address(os, server_port);
 
     msg->wdp_datagram.source_address = udp_get_ip(source);
     msg->wdp_datagram.source_port = udp_get_port(source);
@@ -566,7 +568,7 @@ static int udp_addwdp_from_server(Msg *msg)
      * ok, got the destination, got the socket, 
      * now put it on the outbound queue
      */
-    list_produce(udpc->outgoing_list, msg);
+    gwlist_produce(udpc->outgoing_list, msg);
 
     octstr_destroy(os);
 
@@ -623,7 +625,7 @@ static int udp_addwdp_from_client(Msg *msg)
 
     octstr_destroy(os);
 
-    list_produce(udpc->outgoing_list, msg);
+    gwlist_produce(udpc->outgoing_list, msg);
     
     return -1;
 }
@@ -634,7 +636,7 @@ static int udp_shutdown(void)
     if (!udp_running) return -1;
 
     debug("bb.thread", 0, "udp_shutdown: Starting avalanche");
-    list_remove_producer(incoming_wdp);
+    gwlist_remove_producer(incoming_wdp);
     return 0;
 }
 
@@ -650,10 +652,10 @@ static int udp_die(void)
      */
     debug("bb.udp", 0, "udp_die: removing producers from udp-lists");
 
-    while ((udpc = list_consume(udpc_list)) != NULL) {
-        list_remove_producer(udpc->outgoing_list);
+    while ((udpc = gwlist_consume(udpc_list)) != NULL) {
+        gwlist_remove_producer(udpc->outgoing_list);
     }
-    list_destroy(udpc_list, NULL);
+    gwlist_destroy(udpc_list, NULL);
     udp_running = 0;
     
     return 0;
@@ -669,11 +671,11 @@ static void wdp_router(void *arg)
 {
     Msg *msg;
 
-    list_add_producer(flow_threads);
+    gwlist_add_producer(flow_threads);
     
     while (1) {
 
-        if ((msg = list_consume(outgoing_wdp)) == NULL)
+        if ((msg = gwlist_consume(outgoing_wdp)) == NULL)
             break;
 
         gw_assert(msg_type(msg) == wdp_datagram);
@@ -682,7 +684,7 @@ static void wdp_router(void *arg)
     }
     udp_die();
 
-    list_remove_producer(flow_threads);
+    gwlist_remove_producer(flow_threads);
 }
 
 
@@ -690,11 +692,11 @@ static void service_router(void *arg)
 {
     Msg *msg;
 
-    list_add_producer(flow_threads);
+    gwlist_add_producer(flow_threads);
     
     while (1) {
 
-        if ((msg = list_consume(incoming_wdp)) == NULL)
+        if ((msg = gwlist_consume(incoming_wdp)) == NULL)
             break;
 
         gw_assert(msg_type(msg) == wdp_datagram);
@@ -703,7 +705,7 @@ static void service_router(void *arg)
     }
     udp_die();
 
-    list_remove_producer(flow_threads);
+    gwlist_remove_producer(flow_threads);
 }
 
 
@@ -719,7 +721,9 @@ static void help(void)
     info(0, "-v number");
     info(0, "    set log level for stderr logging");
     info(0, "-i interface");
-    info(0, "    bind to the given interface for UDP sockets");
+    info(0, "    bind to the given interface for UDP server port (default: 0.0.0.0)");
+    info(0, "-p port");
+    info(0, "    bind to the given port for UDP server port (default: 9201)");
     info(0, "-m");
     info(0, "    dump WDP/UDP packets, msg_dump()");
     info(0, "-e");
@@ -735,8 +739,10 @@ int main(int argc, char **argv)
     Cfg *cfg = NULL;
 	
 	gwlib_init();
-
-    while ((opt = getopt(argc, argv, "v:meti:")) != EOF) {
+    
+    server_port = CONNECTION_ORIENTED_PORT;
+    
+    while ((opt = getopt(argc, argv, "v:meti:p:")) != EOF) {
 
         switch (opt) {
             case 'v':
@@ -754,14 +760,17 @@ int main(int argc, char **argv)
             case 't':
                 verbose += 4;
                 break;
-
-
+                
             case 'h':
                 help();
                 exit(0);
 
             case 'i':
                 interface_name = octstr_create(optarg);
+                break;
+                
+            case 'p':
+                server_port = atoi(optarg);
                 break;
 
             case '?':
@@ -787,9 +796,9 @@ int main(int argc, char **argv)
     report_versions("wapproxy");
 
     /* initialize main inbound and outbound queues */
-    outgoing_wdp = list_create();
-    incoming_wdp = list_create();
-    flow_threads = list_create();
+    outgoing_wdp = gwlist_create();
+    incoming_wdp = gwlist_create();
+    flow_threads = gwlist_create();
 
     outgoing_wdp_counter = counter_create();
     incoming_wdp_counter = counter_create();
@@ -797,7 +806,7 @@ int main(int argc, char **argv)
     /* start the main UDP listening threads */
     udp_start(cfg);
 
-    list_add_producer(outgoing_wdp);    
+    gwlist_add_producer(outgoing_wdp);    
     
     debug("bb", 0, "starting WDP routers");
     if (gwthread_create(service_router, NULL) == -1)
@@ -807,16 +816,16 @@ int main(int argc, char **argv)
 
     gwthread_sleep(5.0); /* give time to threads to register themselves */
 
-    while (list_consume(flow_threads) != NULL)
+    while (gwlist_consume(flow_threads) != NULL)
 	;
 
     udp_shutdown();
 
-    list_remove_producer(outgoing_wdp);
+    gwlist_remove_producer(outgoing_wdp);
 
-    list_destroy(flow_threads, NULL);
-    list_destroy(incoming_wdp, NULL);
-    list_destroy(outgoing_wdp, NULL);
+    gwlist_destroy(flow_threads, NULL);
+    gwlist_destroy(incoming_wdp, NULL);
+    gwlist_destroy(outgoing_wdp, NULL);
 
     counter_destroy(incoming_wdp_counter);
     counter_destroy(outgoing_wdp_counter);

@@ -1,7 +1,7 @@
 /* ==================================================================== 
  * The Kannel Software License, Version 1.0 
  * 
- * Copyright (c) 2001-2004 Kannel Group  
+ * Copyright (c) 2001-2005 Kannel Group  
  * Copyright (c) 1998-2001 WapIT Ltd.   
  * All rights reserved. 
  * 
@@ -142,6 +142,12 @@ int gwthread_poll(struct pollfd *fds, long numfds, double timeout);
  * calls gwthread_wakeup on us.  Fractional seconds are allowed. */
 void gwthread_sleep(double seconds);
 
+/* Force a specific thread to terminate. Returns 0 on success, -1 if the
+ * thread has been terminated while calling and non-zero for the pthread
+ * specific error code.
+ */
+int gwthread_cancel(long thread); 
+ 
 /*
  * Check wheather this thread should handle the given signal.
  * Since signals are thread specific, this needs to be handled

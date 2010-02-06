@@ -1,7 +1,7 @@
 /* ==================================================================== 
  * The Kannel Software License, Version 1.0 
  * 
- * Copyright (c) 2001-2004 Kannel Group  
+ * Copyright (c) 2001-2005 Kannel Group  
  * Copyright (c) 1998-2001 WapIT Ltd.   
  * All rights reserved. 
  * 
@@ -104,7 +104,7 @@ ROW(SERVER_PUSH_PUSHING,
      
      wsp_event = wap_event_create(Disconnect_Event);
      wsp_event->u.Disconnect_Event.session_handle = pm->server_push_id;
-     list_append(queue, wsp_event);
+     gwlist_append(queue, wsp_event);
     },
     SERVER_PUSH_NULL_STATE)
 
@@ -116,7 +116,7 @@ ROW(SERVER_PUSH_PUSHING,
 
      wsp_event = wap_event_create(Suspend_Event);
      wsp_event->u.Suspend_Event.session_handle = pm->server_push_id;
-     list_append(queue, wsp_event);
+     gwlist_append(queue, wsp_event);
     },
     SERVER_PUSH_NULL_STATE)
 

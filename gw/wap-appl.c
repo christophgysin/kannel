@@ -1,7 +1,7 @@
 /* ==================================================================== 
  * The Kannel Software License, Version 1.0 
  * 
- * Copyright (c) 2001-2004 Kannel Group  
+ * Copyright (c) 2001-2005 Kannel Group  
  * Copyright (c) 1998-2001 WapIT Ltd.   
  * All rights reserved. 
  * 
@@ -58,16 +58,20 @@
  * gw/wap-appl.c - wapbox application layer and push ota indication, response
  * and confirmation primitive implementation.
  *
- * This module implements indication and confirmation primitives of WAP-189-
- * PushOTA-20000217-a (hereafter called ota). 
- * In addition, WAP-200-WDP-20001212-a (wdp) is referred.
- * Wapbox application layer is not a Wapforum protocol. 
+ * This module implements various indication and confirmation primitives and 
+ * protocol mappings as defined in:
+ * 
+ *   WAP-189-PushOTA-20000217-a (hereafter called ota)
+ *   WAP-200-WDP-20001212-a (wdp)
+ *   WAP-248-UAProf-20011020-a (UAProf)
+ * 
+ * Wapbox application layer itself is not a WAP Forum protocol. 
  *
  * The application layer is reads events from its event queue, fetches the 
  * corresponding URLs and feeds back events to the WSP layer (pull). 
  *
  * In addition, the layer forwards WSP events related to push to the module 
- * wap_push_ppg and wsp, implementing indications, responses  and confirma-
+ * wap_push_ppg and wsp, implementing indications, responses and confirma-
  * tions of ota.
  *
  * Note that push header encoding and decoding are divided two parts:
@@ -156,6 +160,7 @@ struct request_data {
     Octstr *url;
     long x_wap_tod;
     List *request_headers;
+    Octstr *msisdn;
 };
 
 
@@ -244,9 +249,9 @@ static void response_push_connection(WAPEvent *e);
 void wap_appl_init(Cfg *cfg) 
 {
     gw_assert(run_status == limbo);
-    queue = list_create();
+    queue = gwlist_create();
     fetches = counter_create();
-    list_add_producer(queue);
+    gwlist_add_producer(queue);
     run_status = running;
     charsets = wml_charsets();
     caller = http_caller_create();
@@ -265,7 +270,7 @@ void wap_appl_shutdown(void)
     gw_assert(run_status == running);
     run_status = terminating;
     
-    list_remove_producer(queue);
+    gwlist_remove_producer(queue);
     gwthread_join_every(main_thread);
     
     http_caller_signal_shutdown(caller);
@@ -274,8 +279,8 @@ void wap_appl_shutdown(void)
     wap_map_destroy(); 
     wap_map_user_destroy(); 
     http_caller_destroy(caller);
-    list_destroy(queue, wap_event_destroy_item);
-    list_destroy(charsets, octstr_destroy_item);
+    gwlist_destroy(queue, wap_event_destroy_item);
+    gwlist_destroy(charsets, octstr_destroy_item);
     counter_destroy(fetches);
 }
 
@@ -283,14 +288,14 @@ void wap_appl_shutdown(void)
 void wap_appl_dispatch(WAPEvent *event) 
 {
     gw_assert(run_status == running);
-    list_produce(queue, event);
+    gwlist_produce(queue, event);
 }
 
 
 long wap_appl_get_load(void) 
 {
     gw_assert(run_status == running);
-    return counter_value(fetches) + list_len(queue);
+    return counter_value(fetches) + gwlist_len(queue);
 }
 
 
@@ -312,7 +317,7 @@ static void main_thread(void *arg)
     long sid;
     WAPAddrTuple *tuple;
     
-    while (run_status == running && (ind = list_consume(queue)) != NULL) {
+    while (run_status == running && (ind = gwlist_consume(queue)) != NULL) {
     switch (ind->type) {
     case S_MethodInvoke_Ind:
         res = wap_event_create(S_MethodInvoke_Res);
@@ -354,7 +359,7 @@ static void main_thread(void *arg)
 
     case S_Suspend_Ind:
 	    sid = ind->u.S_Suspend_Ind.session_id;
-        if (wap_push_ppg_have_push_session_for_sid(sid)) 
+        if (have_ppg && wap_push_ppg_have_push_session_for_sid(sid)) 
             indicate_push_suspend(ind);
 	    wap_event_destroy(ind);
 	    break;
@@ -509,15 +514,8 @@ static void add_kannel_version(List *headers)
  * to handle those charsets for all content types, just WML/XHTML. */
 static void add_charset_headers(List *headers) 
 {
-    long i, len;
-    
-    gw_assert(charsets != NULL);
-    len = list_len(charsets);
-    for (i = 0; i < len; i++) {
-        unsigned char *charset = octstr_get_cstr(list_get(charsets, i));
-        if (!http_charset_accepted(headers, charset))
-            http_header_add(headers, "Accept-Charset", charset);
-    }
+    if (!http_charset_accepted(headers, "utf-8"))
+        http_header_add(headers, "Accept-Charset", "utf-8");
 }
 
 
@@ -642,6 +640,26 @@ static void add_msisdn(List *headers, WAPAddrTuple *addr_tuple,
 }
 
 
+/* 
+ * Map WSP UAProf headers 'Profile', 'Profile-Diff' to W-HTTP headers
+ * 'X-WAP-Profile', 'X-WAP-Profile-Diff' according to WAP-248-UAProf-20011020-a,
+ * section 9.2.3.3.
+ */
+static void map_uaprof_headers(List *headers) 
+{
+    Octstr *os;
+    Octstr *version;
+    
+    version = http_header_value(headers, octstr_imm("Encoding-Version"));
+    os = octstr_format("WAP/%s %S (" GW_NAME "/%s)", 
+                       (version ? octstr_get_cstr(version) : "1.1"),
+                       get_official_name(), GW_VERSION);
+    http_header_add(headers, "Via", octstr_get_cstr(os));
+    octstr_destroy(os);
+    octstr_destroy(version);
+}
+
+
 /* XXX DAVI: Disabled in cvs revision 1.81 for Opengroup tests
 static void add_referer_url(List *headers, Octstr *url) 
 {
@@ -706,18 +724,50 @@ static void return_unit_reply(WAPAddrTuple *tuple, long transaction_id,
 }
 
 
+static void normalize_charset(struct content * content, List* device_headers)
+{
+    Octstr* charset;
+
+    if ((charset = find_charset_encoding(content->body)) == NULL) {
+        if (octstr_len(content->charset) > 0) {
+            charset = octstr_duplicate(content->charset);
+        } else {
+            charset = octstr_imm("UTF-8");
+        }
+    }
+
+    debug("wap-appl",0,"Normalizing charset from %s", octstr_get_cstr(charset));
+
+    if (octstr_case_compare(charset, octstr_imm("UTF-8")) != 0 &&
+      !http_charset_accepted(device_headers, octstr_get_cstr(charset))) {
+        if (!http_charset_accepted(device_headers, "UTF-8")) {
+            warning(0, "WSP: Device doesn't support charset <%s> neither UTF-8",
+              octstr_get_cstr(charset));
+        } else {
+            debug("wsp",0,"Converting wml/xhtml from charset <%s> to UTF-8",
+              octstr_get_cstr(charset));
+            if (charset_convert(content->body,
+              octstr_get_cstr(charset), "UTF-8") >= 0) {
+                octstr_destroy(content->charset);
+                content->charset = octstr_create("UTF-8");
+            }
+        }
+    }
+    octstr_destroy(charset);
+}
+
 /*
  * Return an HTTP reply back to the phone.
  */
 static void return_reply(int status, Octstr *content_body, List *headers,
     	    	    	 long sdu_size, WAPEvent *orig_event, long session_id, 
                          Octstr *method, Octstr *url, int x_wap_tod,
-                         List *request_headers)
+                         List *request_headers, Octstr *msisdn)
 {
     struct content content;
     int converted;
     WSPMachine *sm;
-    List *device_headers;
+    List *device_headers, *t_headers;
     WAPAddrTuple *addr_tuple;
     Octstr *ua, *server;
 
@@ -730,12 +780,17 @@ static void return_reply(int status, Octstr *content_body, List *headers,
      * request be obviously will not find any session machine entry. */
     sm = find_session_machine_by_id(session_id);
 
+    device_headers = gwlist_create();
+
     /* ensure we pass only the original headers to the convertion routine */
-    device_headers = (orig_event->type == S_MethodInvoke_Ind) ?
+    t_headers = (orig_event->type == S_MethodInvoke_Ind) ?
+        orig_event->u.S_MethodInvoke_Ind.session_headers :
+        NULL;
+    if (t_headers != NULL) http_header_combine(device_headers, t_headers);
+    t_headers = (orig_event->type == S_MethodInvoke_Ind) ?
         orig_event->u.S_MethodInvoke_Ind.request_headers :
         orig_event->u.S_Unit_MethodInvoke_Ind.request_headers;
-    if (device_headers == NULL)
-        device_headers = list_create();
+    if (t_headers != NULL) http_header_combine(device_headers, t_headers);
 
     /* 
      * We are acting as a proxy. Hence ensure we log a correct HTTP response
@@ -756,8 +811,9 @@ static void return_reply(int status, Octstr *content_body, List *headers,
 
     /* log the access */
     /* XXX make this configurable in the future */
-    alog("%s %s <%s> (%s, charset='%s') %ld %d <%s> <%s>", 
+    alog("%s %s %s <%s> (%s, charset='%s') %ld %d <%s> <%s>", 
          octstr_get_cstr(addr_tuple->remote->address), 
+         msisdn ? octstr_get_cstr(msisdn) : "-",         
          octstr_get_cstr(method), octstr_get_cstr(url), 
          content.type ? octstr_get_cstr(content.type) : "", 
          content.charset ? octstr_get_cstr(content.charset) : "",
@@ -822,7 +878,6 @@ static void return_reply(int status, Octstr *content_body, List *headers,
  
 #ifdef ENABLE_COOKIES
         if (session_id != -1)
-            /* DAVI if (get_cookies(url, headers, find_session_machine_by_id(session_id)) == -1) */
             if (get_cookies(headers, find_session_machine_by_id(session_id)) == -1)
                 error(0, "WSP: Failed to extract cookies");
 #endif
@@ -842,54 +897,8 @@ static void return_reply(int status, Octstr *content_body, List *headers,
         if (octstr_search(content.type, octstr_imm("text/vnd.wap.wml"), 0) >= 0 || 
             octstr_search(content.type, octstr_imm("application/xhtml+xml"), 0) >= 0 ||
             octstr_search(content.type, octstr_imm("application/vnd.wap.xhtml+xml"), 0) >= 0) {
-            Octstr *charset;
-            
-            /* get charset used in content body, default to utf-8 if not present */
-            if ((charset = find_charset_encoding(content.body)) == NULL)
-                charset = octstr_imm("UTF-8"); 
 
-            /* convert to utf-8 if original charset is not utf-8 
-             * and device supports it */
-
-            if (octstr_case_compare(charset, octstr_imm("UTF-8")) < 0 &&
-                !http_charset_accepted(device_headers, octstr_get_cstr(charset))) {
-                if (!http_charset_accepted(device_headers, "UTF-8")) {
-                    warning(0, "WSP: Device doesn't support charset <%s> neither UTF-8", 
-                                octstr_get_cstr(charset));
-                } else {
-                    /* convert to utf-8 */
-                    debug("wsp",0,"Converting wml/xhtml from charset <%s> to UTF-8", 
-                          octstr_get_cstr(charset));
-                    if (charset_convert(content.body, 
-                                        octstr_get_cstr(charset), "UTF-8") >= 0) {
-                        octstr_destroy(content.charset);
-                        content.charset = octstr_create("UTF-8");
-                        /* XXX it might be good idea to change <?xml...encoding?> */
-                    }
-                 }
-            }
- 
-            /* convert to iso-8859-1 if original charset is not iso 
-             * and device supports it */
-            else if (octstr_case_compare(charset, octstr_imm("ISO-8859-1")) < 0 &&
-                    !http_charset_accepted(device_headers, octstr_get_cstr(charset))) {
-                if (!http_charset_accepted(device_headers, "ISO-8859-1")) {
-                    warning(0, "WSP: Device doesn't support charset <%s> neither ISO-8859-1", 
-                            octstr_get_cstr(charset));
-                } else {
-                    /* convert to iso-latin1 */
-                    debug("wsp",0,"Converting wml/xhtml from charset <%s> to ISO-8859-1", 
-                          octstr_get_cstr(charset));
-                    if (charset_convert(content.body, 
-                                        octstr_get_cstr(charset), "ISO-8859-1") >= 0) {
-                        octstr_destroy(content.charset);
-                        content.charset = octstr_create("ISO-8859-1");
-                        /* XXX it might be good idea to change <?xml...encoding?> */
-                    }
-                }
-            }
-
-            octstr_destroy(charset);
+            normalize_charset(&content, device_headers);
         }
 
         /* set WBXML Encoding-Version for wml->wmlc conversion */
@@ -1042,6 +1051,7 @@ static void return_reply(int status, Octstr *content_body, List *headers,
     octstr_destroy(content.type); /* body was re-used above */
     octstr_destroy(content.charset);
     octstr_destroy(url);          /* same as content.url */
+    http_destroy_headers(device_headers);
 
     counter_decrease(fetches);
 }
@@ -1067,10 +1077,11 @@ static void return_replies_thread(void *arg)
 
         return_reply(status, body, headers, p->client_SDU_size,
                      p->event, p->session_id, p->method, p->url, p->x_wap_tod,
-                     p->request_headers);
+                     p->request_headers, p->msisdn);
 
         wap_event_destroy(p->event);
         http_destroy_headers(p->request_headers);
+        octstr_destroy(p->msisdn);
         gw_free(p);
         octstr_destroy(final_url);
     }
@@ -1106,6 +1117,7 @@ static void start_fetch(WAPEvent *event)
     struct request_data *p;
     Octstr *send_msisdn_query, *send_msisdn_header, *send_msisdn_format;
     int accept_cookies;
+    Octstr *msisdn;
     
     counter_increase(fetches);
     
@@ -1136,7 +1148,12 @@ static void start_fetch(WAPEvent *event)
         request_body = octstr_duplicate(p->request_body);
         method = p->method;
     }
-    info(0, "Fetching <%s>", octstr_get_cstr(url));
+
+    msisdn = radius_acct_get_msisdn(addr_tuple->remote->address);
+    info(0, "Fetching URL <%s> for MSISDN <%s>, IP <%s:%ld>", octstr_get_cstr(url),
+         msisdn ? octstr_get_cstr(msisdn) : "", 
+         addr_tuple->remote->address ? octstr_get_cstr(addr_tuple->remote->address) : "",
+         addr_tuple->remote->port);
 
     /* 
      * XXX this URL mapping needs to be rebuild! st. 
@@ -1149,7 +1166,7 @@ static void start_fetch(WAPEvent *event)
     if (send_msisdn_header == NULL)
         send_msisdn_header = octstr_create("X-WAP-Network-Client-MSISDN");
 
-    actual_headers = list_create();
+    actual_headers = gwlist_create();
     
     if (session_headers != NULL)
         http_header_combine(actual_headers, session_headers);
@@ -1204,14 +1221,16 @@ static void start_fetch(WAPEvent *event)
     if (octstr_str_compare(method, "GET")  == 0 && 
         octstr_compare(url, magic_url) == 0) {
         ret = HTTP_OK;
-        resp_headers = list_create();
+        resp_headers = gwlist_create();
         http_header_add(resp_headers, "Content-Type", "text/vnd.wap.wml");
         content_body = octstr_create(HEALTH_DECK);
         octstr_destroy(request_body);
         return_reply(ret, content_body, resp_headers, client_SDU_size,
-                     event, session_id, method, url, x_wap_tod, actual_headers);
+                     event, session_id, method, url, x_wap_tod, actual_headers,
+                     msisdn);
         wap_event_destroy(event);
         http_destroy_headers(actual_headers);
+        octstr_destroy(msisdn);
     } 
     /* otherwise it should be a GET, POST or HEAD request type */
     else if (octstr_str_compare(method, "GET") == 0 ||
@@ -1260,6 +1279,7 @@ static void start_fetch(WAPEvent *event)
         p->url = url;
         p->x_wap_tod = x_wap_tod;
         p->request_headers = actual_headers;
+        p->msisdn = msisdn;
 
         /* issue the request to the HTTP server */
         http_start_request(caller, http_name2method(method), url, actual_headers, 
@@ -1275,9 +1295,11 @@ static void start_fetch(WAPEvent *event)
         ret = HTTP_NOT_IMPLEMENTED;
         octstr_destroy(request_body);
         return_reply(ret, content_body, resp_headers, client_SDU_size,
-                     event, session_id, method, url, x_wap_tod, actual_headers);
+                     event, session_id, method, url, x_wap_tod, actual_headers,
+                     msisdn);
         wap_event_destroy(event);
         http_destroy_headers(actual_headers);
+        octstr_destroy(msisdn);
     }
 }
                 
@@ -1417,7 +1439,7 @@ static List *negotiate_capabilities(List *req_caps)
     /* Currently we don't know or care about any capabilities,
      * though it is likely that "Extended Methods" will be
      * the first. */
-    return list_create();
+    return gwlist_create();
 }
 
 
@@ -1445,7 +1467,7 @@ static void check_application_headers(List **headers,
 
     split_header_list(headers, &inh, "Accept-Application");
     
-    if (*headers == NULL || list_len(inh) == 0) {
+    if (*headers == NULL || gwlist_len(inh) == 0) {
         http_header_add(*application_headers, "Accept-Application", "wml ua");
         debug("wap.appl.push", 0, "APPL: No push application, assuming wml"
               " ua");
@@ -1458,7 +1480,7 @@ static void check_application_headers(List **headers,
     coded_value = NULL;
     appid_value = NULL;
 
-    while (list_len(inh) > 0) {
+    while (gwlist_len(inh) > 0) {
         http_header_get(inh, i, &appid_name, &coded_octstr);
 
         /* Greatest value reserved by WINA is 0xFF00 0000*/
@@ -1470,8 +1492,8 @@ static void check_application_headers(List **headers,
             http_header_add(*application_headers, "Accept-Application", 
                             appid_value);
         else {
-	    error(0, "OTA: Unknown application is, skipping: ");
-            octstr_dump(coded_octstr, 0);
+            error(0, "OTA: Unknown application is, skipping: ");
+            octstr_dump(coded_octstr, 0, GW_ERROR);
         }
 
         i++;  
@@ -1507,14 +1529,14 @@ static void decode_bearer_indication(List **headers, List **bearer_headers)
 
     split_header_list(headers, &inb, "Bearer-Indication");
 
-    if (list_len(inb) == 0) {
+    if (gwlist_len(inb) == 0) {
         debug("wap.appl.push", 0, "APPL: No bearer indication headers,"
               " continuing");
         http_destroy_headers(inb);
         return;  
     }
 
-    if (list_len(inb) > 1) {
+    if (gwlist_len(inb) > 1) {
         error(0, "APPL: To many bearer indication header(s), skipping"
               " them");
         http_destroy_headers(inb);
@@ -1534,8 +1556,8 @@ static void decode_bearer_indication(List **headers, List **bearer_headers)
        http_header_dump(*bearer_headers);
        return;
     } else {
-       error(0, "APPL: Illegal bearer indication value, skipping");
-       octstr_dump(coded_octstr, 0);
+       error(0, "APPL: Illegal bearer indication value, skipping:");
+       octstr_dump(coded_octstr, 0, GW_ERROR);
        http_destroy_headers(*bearer_headers);
        return;
     }
@@ -1580,7 +1602,7 @@ static void indicate_push_connection(WAPEvent *e)
 
     decode_bearer_indication(&push_headers, &bearer_headers);
 
-    if (list_len(bearer_headers) == 0) {
+    if (gwlist_len(bearer_headers) == 0) {
         http_destroy_headers(bearer_headers);
         ppg_event->u.Pom_Connect_Ind.bearer_indication = NULL;
     } else
@@ -1675,7 +1697,7 @@ static void indicate_push_resume(WAPEvent *e)
    
     decode_bearer_indication(&push_headers, &bearer_headers);
 
-    if (list_len(bearer_headers) == 0) {
+    if (gwlist_len(bearer_headers) == 0) {
         http_destroy_headers(bearer_headers);
         ppg_event->u.Pom_Resume_Ind.bearer_indication = NULL;
     } else 

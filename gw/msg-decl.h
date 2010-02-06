@@ -1,7 +1,7 @@
 /* ==================================================================== 
  * The Kannel Software License, Version 1.0 
  * 
- * Copyright (c) 2001-2004 Kannel Group  
+ * Copyright (c) 2001-2005 Kannel Group  
  * Copyright (c) 1998-2001 WapIT Ltd.   
  * All rights reserved. 
  * 
@@ -85,6 +85,7 @@ MSG(sms,
 		OCTSTR(msgdata);
 		INTEGER(time);
 		OCTSTR(smsc_id);
+		OCTSTR(smsc_number);
 		OCTSTR(service);
 		OCTSTR(account);
 		UUID(id);
@@ -106,6 +107,8 @@ MSG(sms,
 		INTEGER(msg_left);
 		VOID(split_parts);
 		INTEGER(priority);
+                INTEGER(resend_try);
+                INTEGER(resend_time);
 	})
 
 MSG(ack,

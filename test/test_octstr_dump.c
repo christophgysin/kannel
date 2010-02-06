@@ -1,7 +1,7 @@
 /* ==================================================================== 
  * The Kannel Software License, Version 1.0 
  * 
- * Copyright (c) 2001-2004 Kannel Group  
+ * Copyright (c) 2001-2005 Kannel Group  
  * Copyright (c) 1998-2001 WapIT Ltd.   
  * All rights reserved. 
  * 
@@ -57,7 +57,7 @@
 /*
  * test_octstr_dump.c - reads a file and performs dumping.
  *
- * Stipe Tolj <tolj@wapme-systems.de>
+ * Stipe Tolj <stolj@wapme.de>
  */
 
 #include <string.h>
@@ -88,9 +88,13 @@ int main(int argc, char **argv)
     if (octstr_is_all_hex(hex)) {
         debug("",0,"Trying to converting from hex to binary.");
         if (octstr_hex_to_binary(hex) == 0) {
-            debug("",0,"Convertion was successfull.");
+            FILE *f = fopen(argv[2], "w");
+            debug("",0,"Convertion was successfull. Writing binary content to file `%s'",
+                  argv[2]);
             octstr_destroy(data);
             data = octstr_duplicate(hex);
+            octstr_print(f, data);
+            fclose(f);
         } else {
             debug("",0,"Failed to convert from hex?!");
         }

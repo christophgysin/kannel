@@ -1,7 +1,7 @@
 /* ==================================================================== 
  * The Kannel Software License, Version 1.0 
  * 
- * Copyright (c) 2001-2004 Kannel Group  
+ * Copyright (c) 2001-2005 Kannel Group  
  * Copyright (c) 1998-2001 WapIT Ltd.   
  * All rights reserved. 
  * 
@@ -978,7 +978,7 @@ static int ois_append_submission_options(char *raw, const Msg *msg)
     if (octstr_len(msg->sms.udhdata)) {
 	raw[0] |= (char) 0x02;
     }
-    if (msg->sms.coding == DC_8BIT) { /* XXX and UCS2? */
+    if (msg->sms.coding == DC_8BIT) { /* XXX and UCS-2? */
 	raw[0] |= (char) 0x10;
     }
     return 1;
@@ -1582,7 +1582,7 @@ static int ois_extract_msg_from_buffer(char *str, SMSCenter *smsc)
     int len;
     int count;
 
-    SAY2(8, "ois_extract_msg_from_buffer buflen=%d", smsc->buflen);
+    SAY2(8, "ois_extract_msg_from_buffer buflen=%ld", (long)smsc->buflen);
 
     str[0] = '\0';
 
@@ -1645,7 +1645,7 @@ static int ois_extract_line_from_buffer(char *str, SMSCenter *smsc)
 {
     int len;
 
-    SAY2(3, "ois_extract_line_from_buffer buflen=%d", smsc->buflen);
+    SAY2(3, "ois_extract_line_from_buffer buflen=%ld", (long)smsc->buflen);
 
     str[0] = '\0';
 

@@ -1,7 +1,7 @@
 /* ==================================================================== 
  * The Kannel Software License, Version 1.0 
  * 
- * Copyright (c) 2001-2004 Kannel Group  
+ * Copyright (c) 2001-2005 Kannel Group  
  * Copyright (c) 1998-2001 WapIT Ltd.   
  * All rights reserved. 
  * 
@@ -86,6 +86,7 @@ struct simple_binary_t {
     unsigned char public_id;
     unsigned long charset;
     Octstr *binary;
+    int code_page;
 };
 
 /*
@@ -118,9 +119,10 @@ unsigned char element_check_content(xmlNodePtr node);
 int only_blanks(const char *text);
 
 /*
- * Parses the character set of the document. 
+ * Parses the character set of the document given as Octstr. Returns the
+ * MIBenum value. If the charset is not found, we default to UTF-8 value. 
  */
-int parse_charset(Octstr *charset);
+int parse_charset(Octstr *os);
 
 /*
  * Return the character sets supported by the WML compiler, as a List

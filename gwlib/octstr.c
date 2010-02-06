@@ -1,7 +1,7 @@
 /* ====================================================================
  * The Kannel Software License, Version 1.0 
  * 
- * Copyright (c) 2001-2004 Kannel Group  
+ * Copyright (c) 2001-2005 Kannel Group  
  * Copyright (c) 1998-2001 WapIT Ltd.   
  * All rights reserved. 
  * 
@@ -79,7 +79,8 @@
  * Unfortunately some platforms base va_list an an array type
  * which makes passing of the &args a bit tricky 
  */
-#if defined(__linux__) && (defined(__powerpc__) || defined(__s390__))
+#if (defined(__linux__) && (defined(__powerpc__) || defined(__s390__) || defined(__x86_64))) || \
+    (defined(__FreeBSD__) && defined(__amd64__))
 #define VARGS(x)   (x)
 #define VALPARM(y) va_list y
 #define VALST(z)   (z)
@@ -889,34 +890,36 @@ int octstr_case_compare(const Octstr *os1, const Octstr *os2)
         len = os2->len;
 
     if (len == 0) {
-	if (os1->len == 0 && os2->len > 0)
-	    return -1;
-	if (os1->len > 0 && os2->len == 0)
-	    return 1;
+        if (os1->len == 0 && os2->len > 0)
+            return -1;
+        if (os1->len > 0 && os2->len == 0)
+            return 1;
         return 0;
     }
 
     for (i = 0; i < len; ++i) {
-	c1 = toupper(os1->data[i]);
-	c2 = toupper(os2->data[i]);
-	if (c1 != c2)
-	    break;
+        c1 = toupper(os1->data[i]);
+        c2 = toupper(os2->data[i]);
+        if (c1 != c2)
+            break;
     }
 
     if (i == len) {
-	if (i == os1->len && i == os2->len)
-	    return 0;
-	if (i == os1->len)
-	    return -1;
-	return 1;
+        if (i == os1->len && i == os2->len)
+            return 0;
+        if (i == os1->len)
+            return -1;
+        return 1;
     } else {
-	c1 = toupper(os1->data[i]);
-	c2 = toupper(os2->data[i]);
-	if (c1 < c2)
-	    return -1;
-	if (c1 == c2)
-	    return 0;
-	return 1;
+        /*
+        c1 = toupper(os1->data[i]);
+        c2 = toupper(os2->data[i]);
+        */
+        if (c1 < c2)
+            return -1;
+        if (c1 == c2)
+            return 0;
+        return 1;
     }
 }
 
@@ -952,6 +955,19 @@ int octstr_str_compare(const Octstr *ostr, const char *str)
 	return strcmp("", str);
 
     return strcmp(ostr->data, str);
+}
+
+
+int octstr_str_case_compare(const Octstr *ostr, const char *str)
+{
+    seems_valid(ostr);
+
+    if (str == NULL)
+        return -1;
+    if (ostr->data == NULL)
+       return strcasecmp("", str);
+
+    return strcasecmp(ostr->data, str);
 }
 
 
@@ -1509,7 +1525,7 @@ List *octstr_split_words(const Octstr *ostr)
 
     seems_valid(ostr);
 
-    list = list_create();
+    list = gwlist_create();
 
     p = ostr->data;
     i = 0;
@@ -1531,7 +1547,7 @@ List *octstr_split_words(const Octstr *ostr)
 
         word = octstr_create_from_data(ostr->data + start,
                                        end - start);
-        list_append(list, word);
+        gwlist_append(list, word);
     }
 
     return list;
@@ -1543,17 +1559,17 @@ List *octstr_split(const Octstr *os, const Octstr *sep)
     List *list;
     long next, pos, seplen;
     
-    list = list_create();
+    list = gwlist_create();
     pos = 0;
     seplen = octstr_len(sep);
 
-    while ((next = octstr_search(os, sep, pos)) != -1) {
-	list_append(list, octstr_copy(os, pos, next - pos));
-	pos = next + seplen;
+    while ((next = octstr_search(os, sep, pos)) > 0) {
+        gwlist_append(list, octstr_copy(os, pos, next - pos));
+        pos = next + seplen;
     }
     
     if (pos < octstr_len(os))
-    	list_append(list, octstr_copy(os, pos, octstr_len(os)));
+        gwlist_append(list, octstr_copy(os, pos, octstr_len(os)));
     
     return list;
 }
@@ -1568,107 +1584,6 @@ int octstr_item_match(void *item, void *pattern)
 int octstr_item_case_match(void *item, void *pattern)
 {
     return octstr_case_compare(item, pattern) == 0;
-}
-
-void octstr_dump(const Octstr *ostr, int level)
-{
-    unsigned char *p, *d, buf[1024], charbuf[256];
-    long pos;
-    const int octets_per_line = 16;
-    int c, this_line_begins_at;
-
-    if (ostr == NULL)
-        return;
-
-    seems_valid(ostr);
-
-    debug("gwlib.octstr", 0, "%*sOctet string at %p:", level, "",
-          (void *) ostr);
-    debug("gwlib.octstr", 0, "%*s  len:  %lu", level, "",
-          (unsigned long) ostr->len);
-    debug("gwlib.octstr", 0, "%*s  size: %lu", level, "",
-          (unsigned long) ostr->size);
-    debug("gwlib.octstr", 0, "%*s  immutable: %d", level, "",
-          ostr->immutable);
-
-    buf[0] = '\0';
-    p = buf;
-    d = charbuf;
-    this_line_begins_at = 0;
-    for (pos = 0; pos < octstr_len(ostr); ) {
-        c = octstr_get_char(ostr, pos);
-        sprintf(p, "%02x ", c);
-        p = strchr(p, '\0');
-        if (isprint(c))
-            *d++ = c;
-        else
-            *d++ = '.';
-        ++pos;
-        if (pos - this_line_begins_at == octets_per_line) {
-            *d = '\0';
-            debug("gwlib.octstr", 0, "%*s  data: %s  %s", level, "",
-                  buf, charbuf);
-            buf[0] = '\0';
-            charbuf[0] = '\0';
-            p = buf;
-            d = charbuf;
-            this_line_begins_at = pos;
-        }
-    }
-    if (pos - this_line_begins_at > 0) {
-        *d = '\0';
-        debug("gwlib.octstr", 0, "%*s  data: %-*.*s  %s", level, "",
-              octets_per_line*3,
-              octets_per_line*3, buf, charbuf);
-    }
-
-    debug("gwlib.octstr", 0, "%*sOctet string dump ends.", level, "");
-}
-
-void octstr_dump_short(Octstr *ostr, int level, const char *name)
-{
-    char buf[100];
-    char *p;
-    long i;
-    int c;
-
-    if (ostr == NULL) {
-        debug("gwlib.octstr", 0, "%*s%s: NULL", level, "", name);
-        return;
-    }
-
-    seems_valid(ostr);
-
-    if (ostr->len < 20) {
-        p = buf;
-        for (i = 0; i < ostr->len; i++) {
-            c = ostr->data[i];
-            if (c == '\n') {
-                *p++ = '\\';
-                *p++ = 'n';
-            } else if (!isprint(c)) {
-                break;
-            } else if (c == '"') {
-                *p++ = '\\';
-                *p++ = '"';
-            } else if (c == '\\') {
-                *p++ = '\\';
-                *p++ = '\\';
-            } else {
-                *p++ = c;
-            }
-        }
-        if (i == ostr->len) {
-            *p++ = 0;
-            /* We got through the loop without hitting nonprintable
-             * characters. */
-            debug("gwlib.octstr", 0, "%*s%s: \"%s\"", level, "", name, buf);
-            return;
-        }
-    }
-
-    debug("gwlib.octstr", 0, "%*s%s:", level, "", name);
-    octstr_dump(ostr, level + 1);
 }
 
 
@@ -1981,6 +1896,212 @@ void octstr_append_decimal(Octstr *ostr, long value)
 }
 
 
+
+/**********************************************************************
+ * octstr_dump... and related private functions
+ */
+
+static void octstr_dump_debug(const Octstr *ostr, int level)
+{
+    unsigned char *p, *d, buf[1024], charbuf[256];
+    long pos;
+    const int octets_per_line = 16;
+    int c, this_line_begins_at;
+    
+    if (ostr == NULL)
+        return;
+
+    seems_valid(ostr);
+
+    debug("gwlib.octstr", 0, "%*sOctet string at %p:", level, "",
+          (void *) ostr);
+    debug("gwlib.octstr", 0, "%*s  len:  %lu", level, "",
+          (unsigned long) ostr->len);
+    debug("gwlib.octstr", 0, "%*s  size: %lu", level, "",
+          (unsigned long) ostr->size);
+    debug("gwlib.octstr", 0, "%*s  immutable: %d", level, "",
+          ostr->immutable);
+
+    buf[0] = '\0';
+    p = buf;
+    d = charbuf;
+    this_line_begins_at = 0;
+    for (pos = 0; pos < octstr_len(ostr); ) {
+        c = octstr_get_char(ostr, pos);
+        sprintf(p, "%02x ", c);
+        p = strchr(p, '\0');
+        if (isprint(c))
+            *d++ = c;
+        else
+            *d++ = '.';
+        ++pos;
+        if (pos - this_line_begins_at == octets_per_line) {
+            *d = '\0';
+            debug("gwlib.octstr", 0, "%*s  data: %s  %s", level, "",
+                  buf, charbuf);
+            buf[0] = '\0';
+            charbuf[0] = '\0';
+            p = buf;
+            d = charbuf;
+            this_line_begins_at = pos;
+        }
+    }
+    if (pos - this_line_begins_at > 0) {
+        *d = '\0';
+        debug("gwlib.octstr", 0, "%*s  data: %-*.*s  %s", level, "",
+              octets_per_line*3,
+              octets_per_line*3, buf, charbuf);
+    }
+
+    debug("gwlib.octstr", 0, "%*sOctet string dump ends.", level, "");
+}
+
+
+/*
+ * We do some pre-processor mangling here in order to reduce code for 
+ * the 3 log levels info(), warning() and error() that have the same
+ * argument list.
+ * We need to map the function calls via ## concatenation and revert
+ * to the orginal function call by a define.
+ * The do-while loop emulates a function call.
+ */
+
+#define LLinfo info
+#define LLwarning warning
+#define LLerror error
+
+#define octstr_dump_LOGLEVEL(loglevel, ostr, level) \
+do { \
+    unsigned char *p, *d, buf[1024], charbuf[256]; \
+    long pos; \
+    const int octets_per_line = 16; \
+    int c, this_line_begins_at; \
+    \
+    if (ostr == NULL) \
+        return; \
+    \
+    seems_valid(ostr); \
+    \
+    LL##loglevel(0, "%*sOctet string at %p:", level, "", \
+          (void *) ostr); \
+    LL##loglevel(0, "%*s  len:  %lu", level, "", \
+          (unsigned long) ostr->len); \
+    LL##loglevel(0, "%*s  size: %lu", level, "", \
+          (unsigned long) ostr->size); \
+    LL##loglevel(0, "%*s  immutable: %d", level, "", \
+          ostr->immutable); \
+    \
+    buf[0] = '\0'; \
+    p = buf; \
+    d = charbuf; \
+    this_line_begins_at = 0; \
+    for (pos = 0; pos < octstr_len(ostr); ) { \
+        c = octstr_get_char(ostr, pos); \
+        sprintf(p, "%02x ", c); \
+        p = strchr(p, '\0'); \
+        if (isprint(c)) \
+            *d++ = c; \
+        else \
+            *d++ = '.'; \
+        ++pos; \
+        if (pos - this_line_begins_at == octets_per_line) { \
+            *d = '\0'; \
+            LL##loglevel(0, "%*s  data: %s  %s", level, "", \
+                  buf, charbuf); \
+            buf[0] = '\0'; \
+            charbuf[0] = '\0'; \
+            p = buf; \
+            d = charbuf; \
+            this_line_begins_at = pos; \
+        } \
+    } \
+    if (pos - this_line_begins_at > 0) { \
+        *d = '\0'; \
+        LL##loglevel(0, "%*s  data: %-*.*s  %s", level, "", \
+              octets_per_line*3, \
+              octets_per_line*3, buf, charbuf); \
+    } \
+    \
+    LL##loglevel(0, "%*sOctet string dump ends.", level, ""); \
+} while (0)
+
+
+void octstr_dump_real(const Octstr *ostr, int level, ...)
+{
+    va_list p;
+    unsigned int loglevel;
+    
+    va_start(p, level);
+    loglevel = va_arg(p, unsigned int);
+    va_end(p);
+    
+    switch (loglevel) {
+        case GW_DEBUG:
+            octstr_dump_debug(ostr, level);
+            break;
+        case GW_INFO:
+            octstr_dump_LOGLEVEL(info, ostr, level);
+            break;
+        case GW_WARNING:
+            octstr_dump_LOGLEVEL(warning, ostr, level);
+            break;
+        case GW_ERROR:
+            octstr_dump_LOGLEVEL(error, ostr, level);
+            break;
+        default:
+            octstr_dump_debug(ostr, level);
+            break;
+    }
+}                             
+
+
+void octstr_dump_short(Octstr *ostr, int level, const char *name)
+{
+    char buf[100];
+    char *p;
+    long i;
+    int c;
+
+    if (ostr == NULL) {
+        debug("gwlib.octstr", 0, "%*s%s: NULL", level, "", name);
+        return;
+    }
+
+    seems_valid(ostr);
+
+    if (ostr->len < 20) {
+        p = buf;
+        for (i = 0; i < ostr->len; i++) {
+            c = ostr->data[i];
+            if (c == '\n') {
+                *p++ = '\\';
+                *p++ = 'n';
+            } else if (!isprint(c)) {
+                break;
+            } else if (c == '"') {
+                *p++ = '\\';
+                *p++ = '"';
+            } else if (c == '\\') {
+                *p++ = '\\';
+                *p++ = '\\';
+            } else {
+                *p++ = c;
+            }
+        }
+        if (i == ostr->len) {
+            *p++ = 0;
+            /* We got through the loop without hitting nonprintable
+             * characters. */
+            debug("gwlib.octstr", 0, "%*s%s: \"%s\"", level, "", name, buf);
+            return;
+        }
+    }
+
+    debug("gwlib.octstr", 0, "%*s%s:", level, "", name);
+    octstr_dump(ostr, level + 1);
+}
+
+
 /**********************************************************************
  * octstr_format and related private functions
  */
@@ -2187,7 +2308,7 @@ static void convert(Octstr *os, struct format *format, const char **fmt,
     case 'S':
         new = octstr_duplicate(va_arg(VALST(args), Octstr *));
         if (!new)
-            new = octstr_imm("(null)");
+            new = octstr_create("(null)");
         if (format->has_prec)
             octstr_truncate(new, format->prec);
         break;
@@ -2195,7 +2316,7 @@ static void convert(Octstr *os, struct format *format, const char **fmt,
     case 'E':
         new = octstr_duplicate(va_arg(VALST(args), Octstr *));
         if (!new)
-            new = octstr_imm("(null)");
+            new = octstr_create("(null)");
         octstr_url_encode(new);
         /*
          * note: we use blind truncate - encoded character can get cut half-way.
@@ -2207,7 +2328,7 @@ static void convert(Octstr *os, struct format *format, const char **fmt,
     case 'H':
         new = octstr_duplicate(va_arg(VALST(args), Octstr *));
         if (!new)
-            new = octstr_imm("(null)");
+            new = octstr_create("(null)");
         /* upper case */
         octstr_binary_to_hex(new, 1);
         if (format->has_prec)
@@ -2215,7 +2336,7 @@ static void convert(Octstr *os, struct format *format, const char **fmt,
         break;
 
     case '%':
-    	new = octstr_imm("%");
+    	new = octstr_create("%");
     	break;
 
     default:
@@ -2359,8 +2480,8 @@ octstr_recode (Octstr *tocode, Octstr *fromcode, Octstr *orig)
 	goto cleanup_and_exit;
     }
 
-    if ((octstr_case_compare(fromcode, octstr_imm ("utf-8")) != 0) &&
-	(octstr_case_compare(fromcode, octstr_imm ("utf8")) != 0)) {
+    if ((octstr_case_compare(fromcode, octstr_imm ("UTF-8")) != 0) &&
+	(octstr_case_compare(fromcode, octstr_imm ("UTF8")) != 0)) {
 	if (charset_to_utf8(orig, &octstr_utf8, fromcode) < 0) {
 	    resultcode = -1;
 	    goto cleanup_and_exit;
@@ -2369,8 +2490,8 @@ octstr_recode (Octstr *tocode, Octstr *fromcode, Octstr *orig)
 	octstr_utf8 = octstr_duplicate(orig);
     }
 
-    if ((octstr_case_compare(tocode, octstr_imm ("utf-8")) != 0) &&
-	(octstr_case_compare(tocode, octstr_imm ("utf8")) != 0)) {
+    if ((octstr_case_compare(tocode, octstr_imm ("UTF-8")) != 0) &&
+	(octstr_case_compare(tocode, octstr_imm ("UTF8")) != 0)) {
 	if (charset_from_utf8(octstr_utf8, &octstr_final, tocode) < 0) {
 	    resultcode = -1;
 	    goto cleanup_and_exit;
@@ -2462,7 +2583,7 @@ int octstr_symbolize(Octstr *ostr)
 
 void octstr_delete_matching(Octstr *haystack, Octstr *needle)
 {
-    int p = -1;
+    int p = 0;
     long len;
 
     seems_valid(haystack);
@@ -2470,9 +2591,8 @@ void octstr_delete_matching(Octstr *haystack, Octstr *needle)
     gw_assert(!haystack->immutable);
     len = octstr_len(needle);
 
-    while ((p = octstr_search(haystack, needle, p + 1)) != -1) {
+    while ((p = octstr_search(haystack, needle, p)) != -1) {
         octstr_delete(haystack, p, len);
-        p -= len;
     }
 }
  

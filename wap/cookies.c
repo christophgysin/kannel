@@ -1,7 +1,7 @@
 /* ==================================================================== 
  * The Kannel Software License, Version 1.0 
  * 
- * Copyright (c) 2001-2004 Kannel Group  
+ * Copyright (c) 2001-2005 Kannel Group  
  * Copyright (c) 1998-2001 WapIT Ltd.   
  * All rights reserved. 
  * 
@@ -104,7 +104,7 @@ void cookies_destroy(List *cookies)
 	if (cookies == NULL)
 		return;
 
-	list_destroy(cookies, cookie_destroy);
+	gwlist_destroy(cookies, cookie_destroy);
 }
 
 
@@ -126,8 +126,8 @@ int get_cookies(List *headers, const WSPMachine *sm)
 		return 0;
 	}
 
-	for (pos = 0; pos < list_len(headers); pos++) {
-		header = list_get(headers, pos);
+	for (pos = 0; pos < gwlist_len(headers); pos++) {
+		header = gwlist_get(headers, pos);
 		/* debug ("wap.wsp.http", 0, "get_cookies: Examining header (%s)", octstr_get_cstr (header)); */
 		if (strncasecmp ("set-cookie", octstr_get_cstr (header),10) == 0) {		
 			debug ("wap.wsp.http", 0, "Caching cookie (%s)", octstr_get_cstr (header));
@@ -170,18 +170,15 @@ int set_cookies(List *headers, WSPMachine *sm)
 		return -1;
 	}
 
-	if (sm->cookies == NULL)
-		sm->cookies = list_create();
-
 	/* Expire cookies that have timed out */
 	expire_cookies(sm->cookies);
 
 	/* Walk through the cookie cache, adding the cookie to the request headers */
-	if (list_len(sm->cookies) > 0) {
+	if (gwlist_len(sm->cookies) > 0) {
 		debug("wap.wsp.http", 0, "set_cookies: Cookies in cache");
 
-		for (pos = 0; pos < list_len(sm->cookies); pos++) {
-			value = list_get(sm->cookies, pos);
+		for (pos = 0; pos < gwlist_len(sm->cookies); pos++) {
+			value = gwlist_get(sm->cookies, pos);
 
 			cookie = octstr_create("Cookie: ");
 			if (value->version) 
@@ -199,7 +196,7 @@ int set_cookies(List *headers, WSPMachine *sm)
 				octstr_append(cookie, value->domain);
 			}
 
-			list_append(headers, cookie);
+			gwlist_append(headers, cookie);
 			debug("wap.wsp.http", 0, "set_cookies: Added (%s)", octstr_get_cstr (cookie));
 		}
 	} else
@@ -347,10 +344,10 @@ static Cookie *parse_cookie(Octstr *cookiestr)
 static void add_cookie_to_cache(const WSPMachine *sm, Cookie *value)
 {
 	gw_assert(sm != NULL);
-	gw_assert(sm -> cookies != NULL);
+	gw_assert(sm->cookies != NULL);
 	gw_assert(value != NULL);
 
-	list_append(sm -> cookies, value);
+	gwlist_append(sm->cookies, value);
 
 	return;
 }
@@ -372,8 +369,8 @@ static int have_cookie(List *cookies, Cookie *cookie)
     }
 
     /* Walk through the cookie cache, comparing cookie */
-	while (pos < list_len(cookies)) {
-        value = list_get(cookies, pos);
+	while (pos < gwlist_len(cookies)) {
+        value = gwlist_get(cookies, pos);
 
         /* octstr_compare() now only returns 0 on an exact match or if both args are 0 */
         debug ("wap.wsp.http", 0, "have_cookie: Comparing name (%s:%s), path (%s:%s), domain (%s:%s)",
@@ -393,7 +390,7 @@ static int have_cookie(List *cookies, Cookie *cookie)
 			
             /* We have a match according to 4.3.3 - discard the old one */
             cookie_destroy(value);
-            list_delete(cookies, pos, 1);
+            gwlist_delete(cookies, pos, 1);
 
             /* Discard the new cookie also if max-age is 0 - set if expiry date is up */
             if (cookie->max_age == 0) {
@@ -434,10 +431,10 @@ static void expire_cookies(List *cookies)
 
 	time(&now);
 
-	if (list_len(cookies) > 0) {
+	if (gwlist_len(cookies) > 0) {
 		debug("wap.wsp.http", 0, "expire_cookies: Cookies in cache");
-		for (pos = 0; pos < list_len(cookies); pos++) {
-			value = list_get(cookies, pos);
+		for (pos = 0; pos < gwlist_len(cookies); pos++) {
+			value = gwlist_get(cookies, pos);
 			gw_assert(value != NULL);
 
 			if (value->max_age != -1) {		/* Interesting value */
@@ -445,7 +442,7 @@ static void expire_cookies(List *cookies)
 					debug("wap.wsp.http", 0, "expire_cookies: Expired cookie (%s)",
 						  octstr_get_cstr(value->name));
 					cookie_destroy(value);
-					list_delete(cookies, pos, 1);
+					gwlist_delete(cookies, pos, 1);
 				}
 			}
 		}
@@ -498,6 +495,11 @@ static void cookie_destroy(void *p)
  * Returns: -1 on success, max-age sematic value on success.
  */
 
+/*
+ * TODO: This is obviously the same as gwlib/date.c:date_http_parse().
+ * Need to unify this to one pulic function.
+ */
+ 
 static const char* months[] = {
 	"Jan", "Feb", "Mar", "Apr", "May", "Jun",
     "Jul", "Aug", "Sep", "Oct", "Nov", "Dec", NULL
@@ -529,7 +531,6 @@ static int parse_http_date(const char *expires)
 	memset(&ti, 0, sizeof(struct tm));
 
 	/* Break up the Expires: header */
-
 	if (!(date = strchr(expires, '='))) {
 		error(0, "parse_http_date: Bogus expires type=value header (%s)", expires);
 		return -1;
@@ -540,7 +541,6 @@ static int parse_http_date(const char *expires)
 	}
 
 	/* Onto the date value */
-
 	if (!(p = strchr (date,' '))) {
 		error(0, "parse_http_date: Bogus date string (%s)", date);
 		return -1;
@@ -561,9 +561,8 @@ static int parse_http_date(const char *expires)
 		ti.tm_year -= 1900;
 
 	} else if (p[2] == '-') {
-		/* RFC 850 (normal HTTP) */
-
-		char  buf[MAX_HTTP_DATE_LENGTH];
+        /* RFC 850 (normal HTTP) */
+        char  buf[MAX_HTTP_DATE_LENGTH];
 
 		sscanf(p, "%s %d:%d:%d", buf, &ti.tm_hour, &ti.tm_min, &ti.tm_sec);
 		buf[2] = '\0';
@@ -582,7 +581,6 @@ static int parse_http_date(const char *expires)
 		}
 	} else {
 		/* RFC 822 */
-
 		sscanf(p,"%d %s %d %d:%d:%d",&ti.tm_mday, month, &ti.tm_year,
 			   &ti.tm_hour, &ti.tm_min, &ti.tm_sec);
 
@@ -590,7 +588,6 @@ static int parse_http_date(const char *expires)
          * since tm_year is years since 1900 and the year we parsed
 		 * is absolute, we need to subtract 1900 years from it
 		 */
-
 		ti.tm_year -= 1900;
 	}
 
@@ -608,7 +605,7 @@ static int parse_http_date(const char *expires)
 
 	if (rv == -1) {
 		error(0, "parse_http_date(): mktime() was unable to resolve date/time: %s", 
-			  asctime (&ti));
+			  asctime(&ti));
 		return -1;
 	}
 
@@ -618,15 +615,12 @@ static int parse_http_date(const char *expires)
      * If rv is valid, it should be some time in the (near) future. Normalise this to
 	 * a max-age semantic so we can use the same expiry mechanism 
 	 */
-
 	now = time(NULL);
 
 	if (rv - now < 0) {
-
 		/* This is bad - set the delta to 0 so we expire next time around */
-
 		error(0, "parse_http_date () Expiry time (%s) (delta=%ld) is in the past !", 
-			  asctime (&ti), rv-now);
+			  asctime(&ti), rv-now);
 		return 0;
 	}
 

@@ -1,7 +1,7 @@
 /* ==================================================================== 
  * The Kannel Software License, Version 1.0 
  * 
- * Copyright (c) 2001-2004 Kannel Group  
+ * Copyright (c) 2001-2005 Kannel Group  
  * Copyright (c) 1998-2001 WapIT Ltd.   
  * All rights reserved. 
  * 
@@ -397,7 +397,7 @@ Octstr *md5(Octstr *data)
     md5_update(&context, octstr_get_cstr(data), octstr_len(data));
     md5_final(digest, &context);
 
-    enc = octstr_create(digest);
+    enc = octstr_create_from_data(digest, 16); 
 
     return enc; 
 }

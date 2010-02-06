@@ -1,7 +1,7 @@
 /* ==================================================================== 
  * The Kannel Software License, Version 1.0 
  * 
- * Copyright (c) 2001-2004 Kannel Group  
+ * Copyright (c) 2001-2005 Kannel Group  
  * Copyright (c) 1998-2001 WapIT Ltd.   
  * All rights reserved. 
  * 
@@ -64,7 +64,7 @@
  *
  * See regex(3) man page for more details on POSIX regular expressions.
  *
- * Stipe Tolj <tolj@wapme-systems.de>
+ * Stipe Tolj <stolj@wapme.de>
  */
 
 #include <ctype.h>
@@ -343,18 +343,6 @@ Octstr *gw_regex_subst_pre_real(const regex_t *preg, const Octstr *os, const Oct
     gw_free(rsub);
     
     return result;
-}
-
-int gw_regex_matches(const regex_t *preg, const Octstr *os)
-{
-    size_t n = 1;
-    regmatch_t p[10];
-
-    gw_assert(os != NULL && preg != NULL);
-    
-    debug("", 0, "exec regex on string: %s", octstr_get_cstr(os));
-    return
-        (gw_regex_exec(preg, os, n, p, 0) == 0) ? MATCH : NO_MATCH;
 }
 
 #endif  /* HAVE_REGEX || HAVE_PCRE */

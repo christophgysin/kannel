@@ -1,7 +1,7 @@
 /* ==================================================================== 
  * The Kannel Software License, Version 1.0 
  * 
- * Copyright (c) 2001-2004 Kannel Group  
+ * Copyright (c) 2001-2005 Kannel Group  
  * Copyright (c) 1998-2001 WapIT Ltd.   
  * All rights reserved. 
  * 
@@ -109,6 +109,9 @@ Counter *counter_create(void)
 
 void counter_destroy(Counter *counter)
 {
+    if (counter == NULL)
+        return;
+
 #ifdef HAVE_PTHREAD_SPINLOCK_T
     pthread_spin_destroy(&counter->lock);
 #else

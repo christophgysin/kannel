@@ -1,7 +1,7 @@
 /* ==================================================================== 
  * The Kannel Software License, Version 1.0 
  * 
- * Copyright (c) 2001-2004 Kannel Group  
+ * Copyright (c) 2001-2005 Kannel Group  
  * Copyright (c) 1998-2001 WapIT Ltd.   
  * All rights reserved. 
  * 
@@ -173,12 +173,12 @@ static int receive_reply(HTTPCaller *caller)
     octstr_destroy(charset);
     if (verbose)
         debug("", 0, "Reply headers:");
-    while ((os = list_extract_first(replyh)) != NULL) {
+    while ((os = gwlist_extract_first(replyh)) != NULL) {
         if (verbose)
 	    octstr_dump(os, 1);
 	octstr_destroy(os);
     }
-    list_destroy(replyh, NULL);
+    gwlist_destroy(replyh, NULL);
     if (verbose) {
         debug("", 0, "Reply body:");
         octstr_dump(replyb, 1);
@@ -202,7 +202,7 @@ static void client_thread(void *arg)
     caller = arg;
     succeeded = 0;
     failed = 0;
-    reqh = list_create();
+    reqh = gwlist_create();
     sprintf(buf, "%ld", (long) gwthread_self());
     http_header_add(reqh, "X-Thread", buf);
     if (auth_username != NULL && auth_password != NULL)
@@ -247,7 +247,7 @@ static void split_headers(Octstr *headers, List **split)
     long start;
     long pos;
 
-    *split = list_create();
+    *split = gwlist_create();
     start = 0;
     for (pos = 0; pos < octstr_len(headers); pos++) {
         if (octstr_get_char(headers, pos) == '\n') {
@@ -260,7 +260,7 @@ static void split_headers(Octstr *headers, List **split)
             }
             line = octstr_copy(headers, start, pos - start);
             start = pos + 1;
-            list_append(*split, line);
+            gwlist_append(*split, line);
         }
     }
 }
@@ -311,6 +311,7 @@ int main(int argc, char **argv)
     long proxy_port;
     Octstr *proxy_username;
     Octstr *proxy_password;
+    Octstr *exceptions_regex;
     char *p;
     long threads[MAX_THREADS];
     time_t start, end;
@@ -322,9 +323,10 @@ int main(int argc, char **argv)
     
     proxy = NULL;
     proxy_port = -1;
-    exceptions = list_create();
+    exceptions = gwlist_create();
     proxy_username = NULL;
     proxy_password = NULL;
+    exceptions_regex = NULL;
     num_threads = 1;
     file = 0;
     fp = NULL;
@@ -382,11 +384,15 @@ int main(int argc, char **argv)
 	case 'e':
 	    p = strtok(optarg, ":");
 	    while (p != NULL) {
-		list_append(exceptions, octstr_create(p));
+		gwlist_append(exceptions, octstr_create(p));
 		p = strtok(NULL, ":");
 	    }
 	    break;
-	
+
+   case 'E':
+       exceptions_regex = octstr_create(optarg);
+       break;
+
 	case 'a':
 	    p = strtok(optarg, ":");
 	    if (p != NULL) {
@@ -460,12 +466,13 @@ int main(int argc, char **argv)
     
     if (proxy != NULL && proxy_port > 0) {
         http_use_proxy(proxy, proxy_port, exceptions,
-        proxy_username, proxy_password);
+        proxy_username, proxy_password, exceptions_regex);
     }
     octstr_destroy(proxy);
     octstr_destroy(proxy_username);
     octstr_destroy(proxy_password);
-    list_destroy(exceptions, octstr_destroy_item);
+    octstr_destroy(exceptions_regex);
+    gwlist_destroy(exceptions, octstr_destroy_item);
     
     urls = argv + optind;
     num_urls = argc - optind;
@@ -485,11 +492,12 @@ int main(int argc, char **argv)
     info(0, "%ld requests in %f seconds, %f requests/s.",
          (max_requests * num_threads), run_time, (max_requests * num_threads) / run_time);
     
+    octstr_destroy(ssl_client_certkey_file);
     octstr_destroy(auth_username);
     octstr_destroy(auth_password);
     octstr_destroy(extra_headers);
     octstr_destroy(content_file);
-    list_destroy(split, octstr_destroy_item);
+    gwlist_destroy(split, octstr_destroy_item);
     
     gwlib_shutdown();
     

@@ -1,7 +1,7 @@
 /* ==================================================================== 
  * The Kannel Software License, Version 1.0 
  * 
- * Copyright (c) 2001-2004 Kannel Group  
+ * Copyright (c) 2001-2005 Kannel Group  
  * Copyright (c) 1998-2001 WapIT Ltd.   
  * All rights reserved. 
  * 
@@ -61,7 +61,7 @@
  * for LibSDB.
  *
  * Andreas Fink <andreas@fink.org>, 18.08.2001
- * Stipe Tolj <tolj@wapme-systems.de>, 22.03.2002
+ * Stipe Tolj <stolj@wapme.de>, 22.03.2002
  * Alexander Malysh <a.malysh@centrium.de> 2003
  * Guillaume Cottenceau 2004 (dbpool support)
 */
@@ -390,20 +390,20 @@ struct dlr_storage *dlr_init_sdb(Cfg* cfg)
      * and search for the one we are looking for
      */
 
-     grplist = cfg_get_multi_group(cfg, octstr_imm("sdb-connection"));
-     while (grplist && (grp = list_extract_first(grplist)) != NULL) {
+    grplist = cfg_get_multi_group(cfg, octstr_imm("sdb-connection"));
+    while (grplist && (grp = gwlist_extract_first(grplist)) != NULL) {
         p = cfg_get(grp, octstr_imm("id"));
         if (p != NULL && octstr_compare(p, sdb_id) == 0) {
             goto found;
         }
         if (p != NULL) octstr_destroy(p);
-     }
-     panic(0, "DLR: SDB: connection settings for id '%s' are not specified!",
-           octstr_get_cstr(sdb_id));
+    }
+    panic(0, "DLR: SDB: connection settings for id '%s' are not specified!",
+          octstr_get_cstr(sdb_id));
 
 found:
     octstr_destroy(p);
-    list_destroy(grplist, NULL);
+    gwlist_destroy(grplist, NULL);
 
     if (cfg_get_integer(&pool_size, grp, octstr_imm("max-connections")) == -1 || pool_size == 0)
         pool_size = 1;

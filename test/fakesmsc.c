@@ -1,7 +1,7 @@
 /* ==================================================================== 
  * The Kannel Software License, Version 1.0 
  * 
- * Copyright (c) 2001-2004 Kannel Group  
+ * Copyright (c) 2001-2005 Kannel Group  
  * Copyright (c) 1998-2001 WapIT Ltd.   
  * All rights reserved. 
  * 
@@ -75,7 +75,7 @@
  */
 
 static char usage[] = "\n\
-Usage: fakesmsc [-H host] [-p port] [-i interval] [-m max] [-r <type>] <msg> ... \n\
+Usage: fakesmsc [-H host] [-r port] [-i interval] [-m max] [-z <type>] <msg> ... \n\
 \n\
 * 'host' and 'port' define bearerbox connection (default localhost:10000),\n\
 * 'interval' is time in seconds (floats allowed) between generated messages,\n\
@@ -94,7 +94,7 @@ Examples: \n\
 fakesmsc -m 1 \"123 345 udh %04udh%3f message+data+here\"\n\
 fakesmsc -m 1 \"123 345 route smsbox1 message+data+here\"\n\
 fakesmsc -i 0.01 -m 1000 \"123 345 text nop\" \"1 2 text another message here\"\n\
-fakesmsc -r 7 -m 1000 \"123<rand> 345<rand> text nop <rand>\"\n\
+fakesmsc -z 7 -m 1000 \"123<rand> 345<rand> text nop <rand>\"\n\
 \n\
 Server replies are shown in the same message format.\n";
 
@@ -172,7 +172,7 @@ static int check_args(int i, int argc, char **argv)
     }
     else if (strcmp(argv[i], "-i")==0 || strcmp(argv[i], "--interval")==0)
         interval = atof(argv[i+1]);
-    else if (strcmp(argv[i], "-r")==0 || strcmp(argv[i], "--randomize")==0) {
+    else if (strcmp(argv[i], "-z")==0 || strcmp(argv[i], "--randomize")==0) {
         rnd = atoi(argv[i+1]);
         if (rnd < 0 || rnd > 7)
             rnd = 0;
@@ -193,23 +193,23 @@ static Octstr *randomize(Octstr *os)
     int i;
 
     /* randomize source and receiver number */
-    octstr_format_append(msg, "%S", list_get(words, 0));
+    octstr_format_append(msg, "%S", gwlist_get(words, 0));
     if (rnd & 0x1) 
         octstr_format_append(msg, "%d", gw_rand());
 
-    octstr_format_append(msg, " %S", list_get(words, 1));
+    octstr_format_append(msg, " %S", gwlist_get(words, 1));
     if (rnd & 0x2) 
         octstr_format_append(msg, "%d", gw_rand());
 
-    for (i = 2; i < list_len(words); i++) 
-        octstr_format_append(msg, " %S", list_get(words, i));
+    for (i = 2; i < gwlist_len(words); i++) 
+        octstr_format_append(msg, " %S", gwlist_get(words, i));
 
     if (rnd & 0x4)
         octstr_format_append(msg, " %d", gw_rand());
 
     octstr_append_char(msg, 10); /* End of line */
 
-    list_destroy(words, octstr_destroy_item);
+    gwlist_destroy(words, octstr_destroy_item);
 
     return msg;
 }

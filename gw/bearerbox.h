@@ -1,7 +1,7 @@
 /* ==================================================================== 
  * The Kannel Software License, Version 1.0 
  * 
- * Copyright (c) 2001-2004 Kannel Group  
+ * Copyright (c) 2001-2005 Kannel Group  
  * Copyright (c) 1998-2001 WapIT Ltd.   
  * All rights reserved. 
  * 
@@ -195,7 +195,7 @@ int store_save_ack(Msg *msg, ack_status_t status);
  * might take a while, depending on store size
  * Return -1 if something fails (bb can then PANIC normally)
  */
-int store_load(void);
+int store_load(void(*receive_msg)(Msg*));
 
 /* dump currently non-acknowledged messages into file. This is done
  * automatically now and then, but can be forced. Return -1 if file
@@ -204,8 +204,10 @@ int store_load(void);
 int store_dump(void);
 
 /* initialize system. Return -1 if fname is baad (too long), otherwise
- * load data from disk */
-int store_init(const Octstr *fname);
+ * load data from disk. dump_freq is preferred delay between each disk dump,
+ * in seconds. */
+#define BB_STORE_DEFAULT_DUMP_FREQ 10
+int store_init(const Octstr *fname, long dump_freq);
 
 /* init shutdown (system dies when all acks have been processed) */
 void store_shutdown(void);

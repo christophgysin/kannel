@@ -1,7 +1,7 @@
 /* ==================================================================== 
  * The Kannel Software License, Version 1.0 
  * 
- * Copyright (c) 2001-2004 Kannel Group  
+ * Copyright (c) 2001-2005 Kannel Group  
  * Copyright (c) 1998-2001 WapIT Ltd.   
  * All rights reserved. 
  * 
@@ -103,6 +103,9 @@ static int bearerbox_ssl = 0;
 static Counter *sequence_counter = NULL;
 static long timer_freq = DEFAULT_TIMER_FREQ;
 static Octstr *config_filename;
+
+/* use strict XML parsing or relaxed */
+static int wml_xml_strict = 1;
 
 /* smart error messaging related globals */
 int wsp_smart_errors = 0;
@@ -269,8 +272,9 @@ static void signal_handler(int signum)
     
     switch (signum) {
         case SIGINT:
+        case SIGTERM:
             if (program_status != shutting_down) {
-                error(0, "SIGINT received, let's die.");
+                error(0, "SIGINT or SIGTERM received, let's die.");
                 program_status = shutting_down;
                 break;
             }
@@ -419,37 +423,36 @@ enum {
  */
 static void dispatch_datagram(WAPEvent *dgram)
 {
-    Msg *msg,
-        *part;
+    Msg *msg, *part;
     List *sms_datagrams;
     static unsigned long msg_sequence = 0L;   /* Used only by this function */
 
     msg = part = NULL;
-
-    gw_assert(dgram);
     sms_datagrams = NULL;
-      
-    if (dgram->type != T_DUnitdata_Req) {
-        warning(0, "dispatch_datagram received event of unexpected type.");
-        wap_event_dump(dgram);
-    } else {
-        if (dgram->u.T_DUnitdata_Req.address_type == ADDR_IPV4) {
-	    msg = pack_ip_datagram(dgram);
-            write_to_bearerbox(msg);
-        } else {
-            msg_sequence = counter_increase(sequence_counter) & 0xff;
-            msg = pack_sms_datagram(dgram);
-            sms_datagrams = sms_split(msg, NULL, NULL, NULL, NULL, concatenation, 
-                                      msg_sequence, max_messages, MAX_SMS_OCTETS);
-            debug("wap",0,"WDP (wapbox): delivering %ld segments to bearerbox",
-                  list_len(sms_datagrams));
-            while ((part = list_extract_first(sms_datagrams)) != NULL) {
-	            write_to_bearerbox(part);
-            }
 
-            list_destroy(sms_datagrams, NULL);
-            msg_destroy(msg);
+    if (dgram == NULL) {
+        error(0, "WDP: dispatch_datagram received empty datagram, ignoring.");
+    } 
+    else if (dgram->type != T_DUnitdata_Req) {
+        warning(0, "WDP: dispatch_datagram received event of unexpected type.");
+        wap_event_dump(dgram);
+    } 
+    else if (dgram->u.T_DUnitdata_Req.address_type == ADDR_IPV4) {
+	   msg = pack_ip_datagram(dgram);
+       write_to_bearerbox(msg);
+    } else {
+        msg_sequence = counter_increase(sequence_counter) & 0xff;
+        msg = pack_sms_datagram(dgram);
+        sms_datagrams = sms_split(msg, NULL, NULL, NULL, NULL, concatenation, 
+                                  msg_sequence, max_messages, MAX_SMS_OCTETS);
+        debug("wap",0,"WDP (wapbox): delivering %ld segments to bearerbox",
+              gwlist_len(sms_datagrams));
+        while ((part = gwlist_extract_first(sms_datagrams)) != NULL) {
+	       write_to_bearerbox(part);
         }
+
+        gwlist_destroy(sms_datagrams, NULL);
+        msg_destroy(msg);
     }
 
     wap_event_destroy(dgram);
@@ -498,6 +501,7 @@ static void config_reload(int reload) {
     List *http_proxy_exceptions;
     Octstr *http_proxy_username;
     Octstr *http_proxy_password;
+    Octstr *http_proxy_exceptions_regex;
     int warn_map_url = 0;
 
     /* XXX TO-DO: if(reload) implement wapbox.suspend/mutex.lock */
@@ -527,15 +531,17 @@ static void config_reload(int reload) {
     http_proxy_username = cfg_get(grp, octstr_imm("http-proxy-username"));
     http_proxy_password = cfg_get(grp, octstr_imm("http-proxy-password"));
     http_proxy_exceptions = cfg_get_list(grp, octstr_imm("http-proxy-exceptions"));
+    http_proxy_exceptions_regex = cfg_get(grp, octstr_imm("http-proxy-exceptions-regex"));
     if (http_proxy_host != NULL && http_proxy_port > 0) {
         http_use_proxy(http_proxy_host, http_proxy_port, 
                        http_proxy_exceptions, http_proxy_username, 
-                       http_proxy_password);
+                       http_proxy_password, http_proxy_exceptions_regex);
     }
     octstr_destroy(http_proxy_host);
     octstr_destroy(http_proxy_username);
     octstr_destroy(http_proxy_password);
-    list_destroy(http_proxy_exceptions, octstr_destroy_item);
+    octstr_destroy(http_proxy_exceptions_regex);
+    gwlist_destroy(http_proxy_exceptions, octstr_destroy_item);
 
     grp = cfg_get_single_group(cfg, octstr_imm("wapbox"));
     if (grp == NULL) {
@@ -558,13 +564,23 @@ static void config_reload(int reload) {
 
     /* 
      * users may define 'smart-errors' to have WML decks returned with
-     * error information instread of signaling using the HTTP reply codes
+     * error information instead of signaling using the HTTP reply codes
      */
     cfg_get_bool(&new_bool, grp, octstr_imm("smart-errors"));
     reload_bool(reload, octstr_imm("smart error messaging"), &wsp_smart_errors, &new_bool);
 
-    cfg_get_bool(&new_bool, grp, octstr_imm("concatenation"));
-    reload_bool(reload, octstr_imm("concatenation"), &concatenation, &new_bool);
+    /* decide if our XML parser within WML compiler is strict or relaxed */
+    cfg_get_bool(&new_bool, grp, octstr_imm("wml-strict"));
+    reload_bool(reload, octstr_imm("XML within WML has to be strict"), 
+                &wml_xml_strict, &new_bool);
+    if (!wml_xml_strict)
+        warning(0, "'wml-strict' config directive has been set to no, "
+                   "this may make you vulnerable against XML bogus input.");
+
+    if (cfg_get_bool(&new_bool, grp, octstr_imm("concatenation")) == 1)
+        reload_bool(reload, octstr_imm("concatenation"), &concatenation, &new_bool);
+    else
+        concatenation = 1;
 
     if (cfg_get_integer(&new_value, grp, octstr_imm("max-messages")) != -1) {
         max_messages = new_value;
@@ -607,7 +623,7 @@ static void config_reload(int reload) {
 
     /* configure wap-url-map */
     groups = cfg_get_multi_group(cfg, octstr_imm("wap-url-map"));
-    while (groups && (grp = list_extract_first(groups)) != NULL) {
+    while (groups && (grp = gwlist_extract_first(groups)) != NULL) {
         Octstr *name, *url, *map_url, *send_msisdn_query;
         Octstr *send_msisdn_header, *send_msisdn_format;
         int accept_cookies;
@@ -632,11 +648,11 @@ static void config_reload(int reload) {
              octstr_get_cstr(send_msisdn_header), 
              octstr_get_cstr(send_msisdn_format), (accept_cookies ? "yes" : "no"));
     }
-    list_destroy(groups, NULL);
+    gwlist_destroy(groups, NULL);
 
     /* configure wap-user-map */
     groups = cfg_get_multi_group(cfg, octstr_imm("wap-user-map"));
-    while (groups && (grp = list_extract_first(groups)) != NULL) {
+    while (groups && (grp = gwlist_extract_first(groups)) != NULL) {
         Octstr *name, *user, *pass, *msisdn;
 
         name = cfg_get(grp, octstr_imm("name"));
@@ -651,7 +667,7 @@ static void config_reload(int reload) {
              octstr_get_cstr(user), octstr_get_cstr(pass),
              octstr_get_cstr(msisdn));
     }
-    list_destroy(groups, NULL);
+    gwlist_destroy(groups, NULL);
 
     cfg_destroy(cfg);
     /* XXX TO-DO: if(reload) implement wapbox.resume/mutex.unlock */
@@ -715,7 +731,7 @@ int main(int argc, char **argv)
                           cfg);
     }
 		
-    wml_init();
+    wml_init(wml_xml_strict);
     
     if (bearerbox_host == NULL)
     	bearerbox_host = octstr_create(BB_DEFAULT_HOST);
@@ -733,11 +749,16 @@ int main(int argc, char **argv)
 
     while (program_status != shutting_down) {
 	WAPEvent *dgram;
+        int ret;
 
-    /* block infinite for reading messages */
-	msg = read_from_bearerbox(INFINITE_TIME);
-	if (msg == NULL)
-	    break;
+        /* block infinite for reading messages */
+        ret = read_from_bearerbox(&msg, INFINITE_TIME);
+        if (ret == -1)
+            break;
+        else if (ret == 1) /* timeout */
+            continue;
+        else if (msg == NULL) /* just to be sure, may not happens */
+            break;
 	if (msg_type(msg) == admin) {
 	    if (msg->admin.command == cmd_shutdown) {
 		info(0, "Bearerbox told us to die");

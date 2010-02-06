@@ -1,7 +1,7 @@
 /* ==================================================================== 
  * The Kannel Software License, Version 1.0 
  * 
- * Copyright (c) 2001-2004 Kannel Group  
+ * Copyright (c) 2001-2005 Kannel Group  
  * Copyright (c) 1998-2001 WapIT Ltd.   
  * All rights reserved. 
  * 
@@ -64,7 +64,7 @@
  *
  * See regex(3) man page for more details on POSIX regular expressions.
  *
- * Stipe Tolj <tolj@wapme-systems.de>
+ * Stipe Tolj <stolj@wapme.de>
  */
 
 #ifndef REGEX_H
@@ -84,11 +84,6 @@
  * substitution escape codes $0 to $9 in gw_regex_sub().
  */
 #define REGEX_MAX_SUB_MATCH 10
-
-enum {
-    MATCH = 1,
-    NO_MATCH = -1
-};
 
 
 /*
@@ -192,12 +187,6 @@ Octstr *gw_regex_subst_pre_real(const regex_t *preg, const Octstr *os, const Oct
 #define gw_regex_subst_pre(preg, os, rule) \
     gw_regex_subst_pre_real(preg, os, rule, __FILE__, __LINE__, __func__)
 
-
-/*
- * checks whether or not a given Oct-string matches the regular expression.
- * returns MATCH on match otherwise NO_MATCH
- */
-int gw_regex_matches(const regex_t *preg, const Octstr *os);
 
 #endif
 #endif  /* REGEX_H */

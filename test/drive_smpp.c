@@ -1,7 +1,7 @@
 /* ==================================================================== 
  * The Kannel Software License, Version 1.0 
  * 
- * Copyright (c) 2001-2004 Kannel Group  
+ * Copyright (c) 2001-2005 Kannel Group  
  * Copyright (c) 1998-2001 WapIT Ltd.   
  * All rights reserved. 
  * 
@@ -482,7 +482,7 @@ int main(int argc, char **argv)
     smsc_system_id = octstr_create("kannel_smpp");
     smsc_source_addr = octstr_create("123456");
     message_id_counter = counter_create();
-    bearerbox_host = octstr_create("localhost");
+    bearerbox_host = octstr_create("127.0.0.1");
     port_for_smsbox = 13001;
     max_to_esme = 1;
     num_to_esme = counter_create();
