@@ -3,7 +3,7 @@ Section: net
 Priority: optional
 Maintainer: Paul Dwerryhouse <paul@dwerryhouse.com.au>
 Uploaders: Jonas Smedegaard <dr@jones.dk>
-Build-Depends: debhelper (>> 7.0.0), libxml2-dev, libssl-dev (>= 0.9.8), openssl, libmysqlclient-dev | libmysqlclient15-dev, libpam0g-dev, autoconf, automake, autotools-dev
+Build-Depends: debhelper (>> 7.0.0), libxml2-dev, libssl-dev (>= 0.9.8), openssl, libmysqlclient-dev | libmysqlclient15-dev, libsqlite0-dev, sqlite, libsqlite3-dev, sqlite3, libpq-dev, freetds-dev, libpam0g-dev, autoconf, automake, autotools-dev
 Build-Depends-Indep: docbook-dsssl, jadetex, transfig, imagemagick, ghostscript, jade, docbook
 Vcs-Git: git://git.debian.org/git/collab-maint/kannel.git
 Vcs-Browser: http://git.debian.org/?p=collab-maint/kannel.git;a=summary
