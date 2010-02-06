@@ -1,11 +1,22 @@
-kannel (1.4.3-1) unstable; urgency=low
+kannel (1.4.3-1) UNRELEASED; urgency=low
 
+  [ Paul Dwerryhouse ]
   * New upstream release
   * gw/kannel.8 - changed file:// to file:/// (Closes: #527227)
   * Upgraded to standards-version 3.8.2
   * Depends on psmisc for killall in logrotate script (Closes: #539856)
 
- -- Paul Dwerryhouse <paul@dwerryhouse.com.au>  Sun,  2 Aug 2009 18:03:32 +1000
+  [ Jonas Smedegaard ]
+  * Source now git-maintained: Add Vcs-* stanzas to control file.
+  * Add git-buildpackage configfile, enabling signed tags and pristine-
+    tar.
+  * Use source format '3.0 (quilt)':
+    + Abandon dpatch: Drop build-depending on dpatch; drop patch-related
+      build rules.
+    + Convert patches from dpatch to quilt w/ DEP3 headers.
+    + Add hint file debian/source/format.
+
+ -- Jonas Smedegaard <dr@jones.dk>  Sat, 06 Feb 2010 17:18:48 +0100
 
 kannel (1.4.1-4) unstable; urgency=low
 
