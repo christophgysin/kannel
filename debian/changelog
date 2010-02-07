@@ -1,10 +1,11 @@
-kannel (1.4.3-1) UNRELEASED; urgency=low
+kannel (1.4.3-1) unstable; urgency=low
 
   [ Paul Dwerryhouse ]
-  * New upstream release
-  * gw/kannel.8 - changed file:// to file:/// (Closes: #527227)
-  * Upgraded to standards-version 3.8.2
-  * Depends on psmisc for killall in logrotate script (Closes: #539856)
+  * New upstream release. Closes: bug#563661.
+  * Add patch 33 fixing paths in gw/kannel.8. Closes: bug#527227, thanks
+    to Slaven Rezic.
+  * Depend on psmisc for killall in logrotate script. Closes: #539856,
+    thanks to Alan McNatty.
 
   [ Jonas Smedegaard ]
   * Source now git-maintained: Add Vcs-* stanzas to control file.
@@ -15,8 +16,33 @@ kannel (1.4.3-1) UNRELEASED; urgency=low
       build rules.
     + Convert patches from dpatch to quilt w/ DEP3 headers.
     + Add hint file debian/source/format.
+  * put aside upstream config.guess and config.sub during build (instead
+    of overwriting and removing afterwards), to be VCS-friendly.
+  * Build-depend on unversioned libmysqlclient-dev (and only fallback on
+    deprecated libmysqlclient15-dev to ease backporting).
+  * Build-depend on automake (not older automake1.10).
+  * Depend on ${misc:Depends}.
+  * Cosmetics: Wrap long descriptions at 72 chars, and strip trailing
+    newlines.
+  * Fix patch 33 triple-slash fix.
+  * Add myself as uploader.
+  * Build with configure flag --enable-warnings.
+  * Enable SQLite2, SQLite3 and PostgreSQL support:
+    + Build-depend on libsqlite0-dev, sqlite, libsqlite3-dev, sqlite3
+      and libpq-dev
+    + Add relevant configure flags
+  * Enable PCRE support:
+    + Build-depend on libpcre3-dev
+    + Add relevant configure flag
+  * Tighten LSB init hints:
+    + Require local_fs and remote_fs (not only local_fs, and not only
+      should have)
+    + Should have named
+    + Drop requiring syslog (daemons write directly to log files)
+  * Bump Standards-Version to 3.8.4.
+  * Have kannel-dev depend on needed header packages.
 
- -- Jonas Smedegaard <dr@jones.dk>  Sat, 06 Feb 2010 17:18:48 +0100
+ -- Jonas Smedegaard <dr@jones.dk>  Sun, 07 Feb 2010 02:10:44 +0100
 
 kannel (1.4.1-4) unstable; urgency=low
 
