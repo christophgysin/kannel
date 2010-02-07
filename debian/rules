@@ -51,8 +51,7 @@ endif
 		--with-mysql --with-mysql-dir=/usr \
 		--with-sqlite2 \
 		--with-sqlite3 \
-		--with-pgsql --with-pgsql-dir=/usr \
-		--with-mssql=/usr
+		--with-pgsql --with-pgsql-dir=/usr
 	$(MAKE)
 	touch build-stamp
 
@@ -78,8 +77,7 @@ endif
 		--with-mysql --with-mysql-dir=/usr \
 		--with-sqlite2 \
 		--with-sqlite3 \
-		--with-pgsql --with-pgsql-dir=/usr \
-		--with-mssql=/usr
+		--with-pgsql --with-pgsql-dir=/usr
 	$(MAKE) docs
 	touch build-stamp.indep
 

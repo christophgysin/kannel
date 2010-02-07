@@ -3,7 +3,7 @@ Section: net
 Priority: optional
 Maintainer: Paul Dwerryhouse <paul@dwerryhouse.com.au>
 Uploaders: Jonas Smedegaard <dr@jones.dk>
-Build-Depends: debhelper (>> 7.0.0), libxml2-dev, libssl-dev (>= 0.9.8), openssl, libmysqlclient-dev | libmysqlclient15-dev, libsqlite0-dev, sqlite, libsqlite3-dev, sqlite3, libpq-dev, freetds-dev, libpam0g-dev, autoconf, automake, autotools-dev, libpcre3-dev
+Build-Depends: debhelper (>> 7.0.0), libxml2-dev, libssl-dev (>= 0.9.8), openssl, libmysqlclient-dev | libmysqlclient15-dev, libsqlite0-dev, sqlite, libsqlite3-dev, sqlite3, libpq-dev, libpam0g-dev, autoconf, automake, autotools-dev, libpcre3-dev
 Build-Depends-Indep: docbook-dsssl, jadetex, transfig, imagemagick, ghostscript, jade, docbook
 Vcs-Git: git://git.debian.org/git/collab-maint/kannel.git
 Vcs-Browser: http://git.debian.org/?p=collab-maint/kannel.git;a=summary
@@ -53,7 +53,7 @@ Description: WAP and SMS gateway documentation
 Package: kannel-dev
 Architecture: any
 Section: devel
-Depends: ${misc:Depends}, libssl-dev, libpam0g-dev, libxml2-dev, libpcre3-dev, libmysqlclient-dev, libsqlite0-dev, libsqlite3-dev, libpq-dev, freetds-dev
+Depends: ${misc:Depends}, libssl-dev, libpam0g-dev, libxml2-dev, libpcre3-dev, libmysqlclient-dev, libsqlite0-dev, libsqlite3-dev, libpq-dev
 Description: WAP and SMS gateway headers and development files
  Kannel is a gateway for connecting WAP (Wireless Application Protocol)
  phones to the Internet. It also works as an SMS/SMPP gateway, for
