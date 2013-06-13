@@ -947,7 +947,7 @@ static URLTranslation *create_onetrans(CfgGroup *grp)
 	    goto error;
 	}
 	if (tmp != NULL && keyword_regex != NULL) {
-	    error(0, "Group 'sms-service' may inlcude either 'keyword' or 'keyword-regex'.");
+	    error(0, "Group 'sms-service' may include either 'keyword' or 'keyword-regex'.");
 	    octstr_destroy(tmp);
 	    octstr_destroy(keyword_regex);
 	    goto error;
